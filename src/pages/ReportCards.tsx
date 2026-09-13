@@ -1,9 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { supabase } from '../lib/supabase';
-import { Button } from '../components/ui';
+import { Button, Input } from '../components/ui';
 import { effectiveApprovedGrade, roundWhole, roundOneDecimal, gradeColorClassPrint } from '../lib/periodGrades';
 import { computeRanks } from '../lib/grading';
-import type { SchoolClass, Student, Grade, PeriodDirectGrade, Period, Subject, SchoolSettings } from '../types';
+import { exportElementAsPdf } from '../lib/pdf';
+import type { SchoolClass, Student, Grade, PeriodDirectGrade, Period, Subject, SchoolSettings, AttendanceRecord } from '../types';
+
+interface ConductRow { id: string; student_id: string; academic_year_id: string; conduct: string | null }
 
 export default function ReportCards() {
   const [classes, setClasses] = useState<SchoolClass[]>([]);
@@ -14,7 +17,13 @@ export default function ReportCards() {
   const [studentId, setStudentId] = useState('');
   const [classGrades, setClassGrades] = useState<Grade[]>([]);
   const [classDirectGrades, setClassDirectGrades] = useState<PeriodDirectGrade[]>([]);
+  const [classAttendance, setClassAttendance] = useState<AttendanceRecord[]>([]);
+  const [conductRows, setConductRows] = useState<ConductRow[]>([]);
+  const [conductDraft, setConductDraft] = useState('');
+  const [savingConduct, setSavingConduct] = useState(false);
   const [settings, setSettings] = useState<SchoolSettings | null>(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     Promise.all([
@@ -37,11 +46,15 @@ export default function ReportCards() {
       supabase.from('periods').select('*').eq('academic_year_id', cls.academic_year_id).order('sort_order'),
       supabase.from('grades').select('*').eq('class_id', classId),
       supabase.from('period_direct_grades').select('*').eq('class_id', classId),
-    ]).then(([{ data: s }, { data: p }, { data: g }, { data: d }]) => {
+      supabase.from('attendance').select('*').eq('class_id', classId),
+      supabase.from('student_conduct').select('*').eq('academic_year_id', cls.academic_year_id),
+    ]).then(([{ data: s }, { data: p }, { data: g }, { data: d }, { data: att }, { data: cond }]) => {
       setStudents((s as Student[]) ?? []);
       setPeriods((p as Period[]) ?? []);
       setClassGrades((g as Grade[]) ?? []);
       setClassDirectGrades((d as PeriodDirectGrade[]) ?? []);
+      setClassAttendance((att as AttendanceRecord[]) ?? []);
+      setConductRows((cond as ConductRow[]) ?? []);
     });
   }, [classId, classes]);
 
@@ -52,6 +65,14 @@ export default function ReportCards() {
     const scores = classGrades.filter((g) => g.student_id === forStudentId && g.subject_id === subjectId && g.period_id === periodId);
     const direct = classDirectGrades.find((d) => d.student_id === forStudentId && d.subject_id === subjectId && d.period_id === periodId);
     return effectiveApprovedGrade(scores, direct);
+  }
+
+  function attendanceFor(forStudentId: string, period: Period): number | null {
+    if (!period.start_date || !period.end_date) return null;
+    const records = classAttendance.filter((a) => a.student_id === forStudentId && a.date >= period.start_date! && a.date <= period.end_date!);
+    if (records.length === 0) return null;
+    const present = records.filter((a) => a.status === 'Present').length;
+    return Math.round((present / records.length) * 100);
   }
 
   function buildStudentReport(forStudentId: string) {
@@ -71,20 +92,86 @@ export default function ReportCards() {
       avg2: roundOneDecimal(rows.map((r) => r.avg2)),
       yearly: roundOneDecimal(rows.map((r) => r.yearly)),
     };
-    return { rows, bottomAverages };
+    const attendance = {
+      sem1: semester1.map((p) => attendanceFor(forStudentId, p)),
+      sem2: semester2.map((p) => attendanceFor(forStudentId, p)),
+    };
+    return { rows, bottomAverages, attendance };
   }
 
-  // Rank every active student in the class by their yearly cross-subject average.
-  const ranks = useMemo(() => {
-    const yearlyByStudent = students.map((s) => ({ id: s.id, average: buildStudentReport(s.id).bottomAverages.yearly }));
-    return computeRanks(yearlyByStudent, settings?.tie_rule ?? 'shared_rank');
+  // Compute each student's cross-subject average for every column, once, for ranking.
+  const allColumnAverages = useMemo(() => {
+    return students.map((s) => {
+      const rpt = buildStudentReport(s.id);
+      return { id: s.id, ...rpt.bottomAverages };
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [students, classGrades, classDirectGrades, subjects, periods, settings]);
+  }, [students, classGrades, classDirectGrades, subjects, periods]);
+
+  const ranksByColumn = useMemo(() => {
+    const tieRule = settings?.tie_rule ?? 'shared_rank';
+    const rankFor = (getValue: (row: (typeof allColumnAverages)[number]) => number | null) =>
+      computeRanks(allColumnAverages.map((r) => ({ id: r.id, average: getValue(r) })), tieRule);
+    return {
+      sem1: semester1.map((_, i) => rankFor((r) => r.sem1[i])),
+      avg1: rankFor((r) => r.avg1),
+      sem2: semester2.map((_, i) => rankFor((r) => r.sem2[i])),
+      avg2: rankFor((r) => r.avg2),
+      yearly: rankFor((r) => r.yearly),
+    };
+  }, [allColumnAverages, semester1, semester2, settings]);
 
   const student = students.find((s) => s.id === studentId);
   const cls = classes.find((c) => c.id === classId);
   const report = student ? buildStudentReport(student.id) : null;
-  const rank = student ? ranks.get(student.id) ?? null : null;
+  const studentRanks = student ? {
+    sem1: ranksByColumn.sem1.map((m) => m.get(student.id) ?? null),
+    avg1: ranksByColumn.avg1.get(student.id) ?? null,
+    sem2: ranksByColumn.sem2.map((m) => m.get(student.id) ?? null),
+    avg2: ranksByColumn.avg2.get(student.id) ?? null,
+    yearly: ranksByColumn.yearly.get(student.id) ?? null,
+  } : null;
+
+  useEffect(() => {
+    if (!student) { setConductDraft(''); return; }
+    setConductDraft(conductRows.find((c) => c.student_id === student.id)?.conduct ?? '');
+  }, [studentId, conductRows]);
+
+  async function saveConduct() {
+    if (!student || !cls) return;
+    setSavingConduct(true);
+    const existing = conductRows.find((c) => c.student_id === student.id);
+    const { data: userData } = await supabase.auth.getUser();
+    const payload = {
+      student_id: student.id,
+      academic_year_id: cls.academic_year_id,
+      conduct: conductDraft || null,
+      updated_by: userData.user?.id ?? null,
+      updated_at: new Date().toISOString(),
+    };
+    if (existing) {
+      await supabase.from('student_conduct').update(payload).eq('id', existing.id);
+    } else {
+      await supabase.from('student_conduct').insert(payload);
+    }
+    setSavingConduct(false);
+    const { data } = await supabase.from('student_conduct').select('*').eq('academic_year_id', cls.academic_year_id);
+    setConductRows((data as ConductRow[]) ?? []);
+  }
+
+  const colCount = semester1.length + semester2.length + 3; // + avg1 + avg2 + yearly
+
+  async function handleDownload() {
+    if (!student) return;
+    setExportError(null);
+    setExporting(true);
+    try {
+      await exportElementAsPdf('report-card-print', `${student.first_name}-${student.last_name}-report-card`);
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Could not generate the PDF.');
+    }
+    setExporting(false);
+  }
 
   return (
     <div className="p-4">
@@ -102,10 +189,15 @@ export default function ReportCards() {
         </select>
       </div>
 
-      {!student || !report ? (
+      {!student || !report || !studentRanks ? (
         <p className="py-10 text-center text-sm text-neutral-500">Select a class and student to view their report card.</p>
       ) : (
         <>
+          <div className="no-print mb-3 flex items-center gap-2">
+            <Input placeholder="Conduct (e.g. Good, Excellent)" value={conductDraft} onChange={(e) => setConductDraft(e.target.value)} className="flex-1" />
+            <Button onClick={saveConduct} disabled={savingConduct}>{savingConduct ? 'Saving…' : 'Save Conduct'}</Button>
+          </div>
+
           <div id="report-card-print" className="rounded-xl border-2 border-gold/60 bg-white p-3 text-black">
             <div className="mb-2 border-b-2 border-blue-900 pb-2 text-center">
               <div className="text-base font-bold tracking-wide text-blue-900">{settings?.school_name ?? 'AJB LEADERS ACADEMY'}</div>
@@ -153,13 +245,56 @@ export default function ReportCards() {
                   <td className={`border border-blue-200 p-1 text-center ${gradeColorClassPrint(report.bottomAverages.avg2)}`}>{report.bottomAverages.avg2 ?? ''}</td>
                   <td className={`border border-blue-200 p-1 text-center ${gradeColorClassPrint(report.bottomAverages.yearly)}`}>{report.bottomAverages.yearly ?? ''}</td>
                 </tr>
-                <tr className="bg-yellow-50 font-semibold">
-                  <td colSpan={semester1.length + semester2.length + 3} className="border border-blue-200 p-1 text-center">
-                    Class Rank: {rank ?? '—'} of {students.length}
-                  </td>
+                <tr className="bg-yellow-50">
+                  <td className="border border-blue-200 p-1 font-semibold text-blue-900">Rank</td>
+                  {studentRanks.sem1.map((r, i) => <td key={i} className="border border-blue-200 p-1 text-center">{r ?? ''}</td>)}
+                  <td className="border border-blue-200 p-1 text-center">{studentRanks.avg1 ?? ''}</td>
+                  {studentRanks.sem2.map((r, i) => <td key={i} className="border border-blue-200 p-1 text-center">{r ?? ''}</td>)}
+                  <td className="border border-blue-200 p-1 text-center">{studentRanks.avg2 ?? ''}</td>
+                  <td className="border border-blue-200 p-1 text-center">{studentRanks.yearly ?? ''}</td>
+                </tr>
+                <tr>
+                  <td className="border border-blue-200 p-1 font-semibold text-blue-900">Attendance %</td>
+                  {report.attendance.sem1.map((v, i) => <td key={i} className="border border-blue-200 p-1 text-center">{v ?? '—'}</td>)}
+                  <td className="border border-blue-200 p-1 text-center">{roundWhole(report.attendance.sem1) ?? '—'}</td>
+                  {report.attendance.sem2.map((v, i) => <td key={i} className="border border-blue-200 p-1 text-center">{v ?? '—'}</td>)}
+                  <td className="border border-blue-200 p-1 text-center">{roundWhole(report.attendance.sem2) ?? '—'}</td>
+                  <td className="border border-blue-200 p-1 text-center">{roundWhole([...report.attendance.sem1, ...report.attendance.sem2]) ?? '—'}</td>
+                </tr>
+                <tr>
+                  <td className="border border-blue-200 p-1 font-semibold text-blue-900">Conduct</td>
+                  <td colSpan={colCount - 1} className="border border-blue-200 p-1 text-center">{conductDraft || '—'}</td>
                 </tr>
               </tbody>
             </table>
+
+            <div className="mt-3 grid grid-cols-2 gap-3 text-[9px]">
+              <div>
+                <div className="font-semibold text-blue-900">GRADING METHOD</div>
+                <div>A 95 – 100 = Excellent</div>
+                <div>B 90 – 94 = Very Good</div>
+                <div>C 80 – 89 = Good</div>
+                <div>D 70 – 79 = Average</div>
+                <div>E Below 70 = Poor</div>
+              </div>
+              <div>
+                <div className="font-semibold text-blue-900">MOTTO</div>
+                <div className="italic">{settings?.motto ?? '—'}</div>
+              </div>
+            </div>
+
+            <div className="mt-3 text-[9px]">
+              <div className="font-semibold text-blue-900">PROMOTION STATEMENT</div>
+              <div>
+                This certifies that <b>{student.first_name} {student.last_name}</b> has satisfactorily completed the work of Grade <b>{cls?.name}</b> and is:
+              </div>
+              <div className="mt-1 space-y-0.5">
+                <div>☐ A. Promoted to Grade ____</div>
+                <div>☐ B. Conditioned in ____</div>
+                <div>☐ C. Required to repeat the grade.</div>
+                <div>☐ D. Asked not to enroll next year.</div>
+              </div>
+            </div>
 
             <div className="mt-6 flex justify-between text-[9px]">
               <div>____________________<br />Class Teacher's Signature</div>
@@ -168,7 +303,10 @@ export default function ReportCards() {
             </div>
           </div>
 
-          <Button className="no-print mt-3 w-full" onClick={() => window.print()}>Print / Save PDF</Button>
+          {exportError && <p className="no-print mt-2 text-sm text-red-400">{exportError}</p>}
+          <Button className="no-print mt-3 w-full" onClick={handleDownload} disabled={exporting}>
+            {exporting ? 'Generating PDF…' : 'Download / Share PDF'}
+          </Button>
         </>
       )}
     </div>

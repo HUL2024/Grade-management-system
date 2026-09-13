@@ -191,6 +191,21 @@ create table period_direct_grades (
   unique (student_id, subject_id, period_id)
 );
 
+-- ---------- PERIODS (date ranges, optional) ----------
+alter table periods add column if not exists start_date date;
+alter table periods add column if not exists end_date date;
+
+-- ---------- CONDUCT (manually entered, once per student per year) ----------
+create table student_conduct (
+  id uuid primary key default uuid_generate_v4(),
+  student_id uuid not null references students(id) on delete cascade,
+  academic_year_id uuid not null references academic_years(id) on delete cascade,
+  conduct text,
+  updated_by uuid references profiles(id),
+  updated_at timestamptz not null default now(),
+  unique (student_id, academic_year_id)
+);
+
 -- ---------- ATTENDANCE ----------
 create table attendance (
   id uuid primary key default uuid_generate_v4(),
@@ -261,17 +276,13 @@ alter table school_settings enable row level security;
 alter table class_subject_teachers enable row level security;
 alter table academic_history enable row level security;
 alter table report_card_comments enable row level security;
+alter table student_conduct enable row level security;
 
--- Any authenticated, active user can read most academic data.
-create policy "read_all_authenticated" on students for select using (auth.role() = 'authenticated');
+-- Any authenticated, active user can read most academic data (teachers are
+-- scoped further below, once current_teacher_id() is defined).
 create policy "read_all_authenticated" on teachers for select using (auth.role() = 'authenticated');
-create policy "read_all_authenticated" on classes for select using (auth.role() = 'authenticated');
-create policy "read_all_authenticated" on subjects for select using (auth.role() = 'authenticated');
-create policy "read_all_authenticated" on grades for select using (auth.role() = 'authenticated');
-create policy "read_all_authenticated" on attendance for select using (auth.role() = 'authenticated');
 create policy "read_all_authenticated" on academic_years for select using (auth.role() = 'authenticated');
 create policy "read_all_authenticated" on periods for select using (auth.role() = 'authenticated');
-create policy "read_all_authenticated" on period_direct_grades for select using (auth.role() = 'authenticated');
 create policy "read_own_profile" on profiles for select using (auth.uid() = id);
 
 -- Writes restricted to administrator/principal/teacher/academic_officer via a helper function.
@@ -280,21 +291,119 @@ language sql security definer stable as $$
   select role from profiles where id = auth.uid();
 $$;
 
+-- Resolves the logged-in teacher's row in `teachers`, if any. Used to scope
+-- a teacher's visibility/writes to only the classes and subjects they are
+-- actually assigned via class_subject_teachers.
+create or replace function current_teacher_id() returns uuid
+language sql security definer stable as $$
+  select id from teachers where user_id = auth.uid();
+$$;
+
+-- Students: teachers only see students in classes assigned to them.
+create policy "read_students_scoped" on students for select using (
+  current_user_role() <> 'teacher'
+  or exists (
+    select 1 from class_subject_teachers cst
+    where cst.class_id = students.current_class_id and cst.teacher_id = current_teacher_id()
+  )
+);
+
+-- Classes: teachers only see classes assigned to them.
+create policy "read_classes_scoped" on classes for select using (
+  current_user_role() <> 'teacher'
+  or exists (
+    select 1 from class_subject_teachers cst
+    where cst.class_id = classes.id and cst.teacher_id = current_teacher_id()
+  )
+);
+
+-- Subjects: teachers only see subjects assigned to them (in any class).
+create policy "read_subjects_scoped" on subjects for select using (
+  current_user_role() <> 'teacher'
+  or exists (
+    select 1 from class_subject_teachers cst
+    where cst.subject_id = subjects.id and cst.teacher_id = current_teacher_id()
+  )
+);
+
+-- Grades: teachers only see/touch grades for their assigned class+subject.
+create policy "read_grades_scoped" on grades for select using (
+  current_user_role() <> 'teacher'
+  or exists (
+    select 1 from class_subject_teachers cst
+    where cst.class_id = grades.class_id and cst.subject_id = grades.subject_id and cst.teacher_id = current_teacher_id()
+  )
+);
+
+create policy "read_period_direct_grades_scoped" on period_direct_grades for select using (
+  current_user_role() <> 'teacher'
+  or exists (
+    select 1 from class_subject_teachers cst
+    where cst.class_id = period_direct_grades.class_id and cst.subject_id = period_direct_grades.subject_id and cst.teacher_id = current_teacher_id()
+  )
+);
+
+-- Attendance: teachers only see/mark attendance for their assigned classes
+-- (attendance isn't subject-specific, so any assignment to the class qualifies).
+create policy "read_attendance_scoped" on attendance for select using (
+  current_user_role() <> 'teacher'
+  or exists (
+    select 1 from class_subject_teachers cst
+    where cst.class_id = attendance.class_id and cst.teacher_id = current_teacher_id()
+  )
+);
+
 create policy "write_students_staff" on students for all
   using (current_user_role() in ('administrator','principal','academic_officer'))
   with check (current_user_role() in ('administrator','principal','academic_officer'));
 
 create policy "write_grades_staff" on grades for all
-  using (current_user_role() in ('administrator','principal','teacher','academic_officer'))
-  with check (current_user_role() in ('administrator','principal','teacher','academic_officer'));
+  using (
+    current_user_role() in ('administrator','principal','academic_officer')
+    or (current_user_role() = 'teacher' and exists (
+      select 1 from class_subject_teachers cst
+      where cst.class_id = grades.class_id and cst.subject_id = grades.subject_id and cst.teacher_id = current_teacher_id()
+    ))
+  )
+  with check (
+    current_user_role() in ('administrator','principal','academic_officer')
+    or (current_user_role() = 'teacher' and grades.grade_status in ('draft','submitted') and exists (
+      select 1 from class_subject_teachers cst
+      where cst.class_id = grades.class_id and cst.subject_id = grades.subject_id and cst.teacher_id = current_teacher_id()
+    ))
+  );
 
 create policy "write_attendance_staff" on attendance for all
-  using (current_user_role() in ('administrator','principal','teacher','academic_officer'))
-  with check (current_user_role() in ('administrator','principal','teacher','academic_officer'));
+  using (
+    current_user_role() in ('administrator','principal','academic_officer')
+    or (current_user_role() = 'teacher' and exists (
+      select 1 from class_subject_teachers cst
+      where cst.class_id = attendance.class_id and cst.teacher_id = current_teacher_id()
+    ))
+  )
+  with check (
+    current_user_role() in ('administrator','principal','academic_officer')
+    or (current_user_role() = 'teacher' and exists (
+      select 1 from class_subject_teachers cst
+      where cst.class_id = attendance.class_id and cst.teacher_id = current_teacher_id()
+    ))
+  );
 
 create policy "write_period_direct_grades_staff" on period_direct_grades for all
-  using (current_user_role() in ('administrator','principal','teacher','academic_officer'))
-  with check (current_user_role() in ('administrator','principal','teacher','academic_officer'));
+  using (
+    current_user_role() in ('administrator','principal','academic_officer')
+    or (current_user_role() = 'teacher' and exists (
+      select 1 from class_subject_teachers cst
+      where cst.class_id = period_direct_grades.class_id and cst.subject_id = period_direct_grades.subject_id and cst.teacher_id = current_teacher_id()
+    ))
+  )
+  with check (
+    current_user_role() in ('administrator','principal','academic_officer')
+    or (current_user_role() = 'teacher' and period_direct_grades.status in ('draft','submitted') and exists (
+      select 1 from class_subject_teachers cst
+      where cst.class_id = period_direct_grades.class_id and cst.subject_id = period_direct_grades.subject_id and cst.teacher_id = current_teacher_id()
+    ))
+  );
 
 create policy "write_admin_only" on academic_years for all
   using (current_user_role() in ('administrator','principal'))
@@ -347,6 +456,11 @@ create policy "write_academic_history" on academic_history for all
 
 create policy "read_report_card_comments" on report_card_comments for select using (auth.role() = 'authenticated');
 create policy "write_report_card_comments" on report_card_comments for all
+  using (current_user_role() in ('administrator','principal','teacher','academic_officer'))
+  with check (current_user_role() in ('administrator','principal','teacher','academic_officer'));
+
+create policy "read_student_conduct" on student_conduct for select using (auth.role() = 'authenticated');
+create policy "write_student_conduct" on student_conduct for all
   using (current_user_role() in ('administrator','principal','teacher','academic_officer'))
   with check (current_user_role() in ('administrator','principal','teacher','academic_officer'));
 

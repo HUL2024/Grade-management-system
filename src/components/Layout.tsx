@@ -2,7 +2,7 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   CalendarCheck, FileText, Trophy, History, ArrowUpCircle, BarChart3,
-  CalendarRange, Settings, DatabaseBackup, ShieldCheck, ScrollText, Menu, LogOut, WifiOff, Wifi, ListChecks
+  CalendarRange, Settings, DatabaseBackup, ShieldCheck, ScrollText, Menu, LogOut, WifiOff, Wifi, ListChecks, UserCog
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
@@ -14,6 +14,7 @@ const NAV = [
   { to: '/classes', label: 'Classes', icon: BookOpen, roles: ['administrator', 'principal'] },
   { to: '/subjects', label: 'Subjects', icon: ClipboardList, roles: ['administrator', 'principal'] },
   { to: '/assessments', label: 'Assessments', icon: ListChecks, roles: ['administrator', 'principal'] },
+  { to: '/assignments', label: 'Teacher Assignments', icon: UserCog, roles: ['administrator', 'principal'] },
   { to: '/gradebook', label: 'Gradebook', icon: FileText, roles: ['administrator', 'principal', 'teacher', 'academic_officer'] },
   { to: '/attendance', label: 'Attendance', icon: CalendarCheck, roles: ['administrator', 'principal', 'teacher', 'academic_officer'] },
   { to: '/report-cards', label: 'Report Cards', icon: FileText, roles: null },

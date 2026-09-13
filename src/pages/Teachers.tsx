@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLog';
 import { Button, Input, Card, EmptyState, StatusPill, SavingIndicator } from '../components/ui';
-import type { Teacher } from '../types';
-import { Plus, X } from 'lucide-react';
+import type { Teacher, SchoolClass, Subject, AcademicYear, ClassSubjectTeacher } from '../types';
+import { Plus, X, Trash2 } from 'lucide-react';
 import { PhotoUpload } from '../components/PhotoUpload';
 import { friendlyDbError } from '../lib/errors';
 
@@ -15,7 +15,17 @@ export default function Teachers() {
   const [saveState, setSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
-  useEffect(() => { load(); }, []);
+  // Assignment management, embedded right in this form.
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
+  const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [years, setYears] = useState<AcademicYear[]>([]);
+  const [assignments, setAssignments] = useState<ClassSubjectTeacher[]>([]);
+  const [newAssignment, setNewAssignment] = useState<{ class_id: string; subject_id: string; academic_year_id: string }>({ class_id: '', subject_id: '', academic_year_id: '' });
+  const [assignmentError, setAssignmentError] = useState<string | null>(null);
+  const [assignmentSaving, setAssignmentSaving] = useState(false);
+
+  useEffect(() => { load(); loadAssignmentOptions(); }, []);
+  useEffect(() => { if (editing?.id) loadAssignments(editing.id); }, [editing?.id]);
 
   async function load() {
     setLoading(true);
@@ -24,10 +34,66 @@ export default function Teachers() {
     setLoading(false);
   }
 
+  async function loadAssignmentOptions() {
+    const [{ data: c }, { data: s }, { data: y }] = await Promise.all([
+      supabase.from('classes').select('*').order('name'),
+      supabase.from('subjects').select('*').order('name'),
+      supabase.from('academic_years').select('*').order('name', { ascending: false }),
+    ]);
+    setClasses((c as SchoolClass[]) ?? []);
+    setSubjects((s as Subject[]) ?? []);
+    const yearList = (y as AcademicYear[]) ?? [];
+    setYears(yearList);
+    const active = yearList.find((yr) => yr.status === 'active');
+    setNewAssignment((prev) => ({ ...prev, academic_year_id: prev.academic_year_id || active?.id || '' }));
+  }
+
+  async function loadAssignments(teacherId: string) {
+    const { data } = await supabase.from('class_subject_teachers').select('*').eq('teacher_id', teacherId);
+    setAssignments((data as ClassSubjectTeacher[]) ?? []);
+  }
+
+  function className(id: string) { return classes.find((c) => c.id === id)?.name ?? '—'; }
+  function subjectName(id: string) { return subjects.find((s) => s.id === id)?.name ?? '—'; }
+  function yearName(id: string) { return years.find((y) => y.id === id)?.name ?? '—'; }
+
   function openNew() {
     setEditing({ status: 'Active' });
     setPassword('');
     setErrorMsg(null);
+    setAssignments([]);
+  }
+
+  async function addAssignment() {
+    if (!editing?.id) return;
+    setAssignmentError(null);
+    if (!newAssignment.class_id || !newAssignment.subject_id || !newAssignment.academic_year_id) {
+      setAssignmentError('Choose a class, subject and academic year first.');
+      return;
+    }
+    setAssignmentSaving(true);
+    const { error } = await supabase.from('class_subject_teachers').insert({
+      teacher_id: editing.id,
+      class_id: newAssignment.class_id,
+      subject_id: newAssignment.subject_id,
+      academic_year_id: newAssignment.academic_year_id,
+    });
+    setAssignmentSaving(false);
+    if (error) {
+      setAssignmentError(friendlyDbError(error, { duplicate: 'This teacher is already assigned to that class and subject for this year.' }));
+      return;
+    }
+    await logActivity('assignment_created', { teacher: editing.full_name, class: className(newAssignment.class_id), subject: subjectName(newAssignment.subject_id) });
+    loadAssignments(editing.id);
+  }
+
+  async function removeAssignment(a: ClassSubjectTeacher) {
+    // Removing an assignment only changes who is CURRENTLY assigned — it never
+    // touches grades already entered, which stay exactly as they were recorded.
+    if (!confirm(`Remove ${subjectName(a.subject_id)} — ${className(a.class_id)} from this teacher? Grades they already entered are not affected.`)) return;
+    await supabase.from('class_subject_teachers').delete().eq('id', a.id);
+    await logActivity('assignment_removed', { teacher: editing?.full_name, class: className(a.class_id), subject: subjectName(a.subject_id) });
+    if (editing?.id) loadAssignments(editing.id);
   }
 
   async function handleSave(e: React.FormEvent) {
@@ -38,8 +104,6 @@ export default function Teachers() {
     const isNew = !editing.id;
 
     if (isNew) {
-      // New teachers get a real login account created via the server-side
-      // function (it needs the service-role key, which never runs in the browser).
       if (!editing.phone) {
         setErrorMsg('Phone number is required — teachers log in with their phone number.');
         return;
@@ -72,8 +136,21 @@ export default function Teachers() {
         return;
       }
       await logActivity('teacher_created', { name: editing.full_name });
+      setSaveState('saved');
+      await load();
+      // Keep the form open, switched into "edit" mode for the teacher we just
+      // created, so assignments can be added immediately in the same place.
+      const newTeacherId = (data as any)?.teacher_id as string | undefined;
+      if (newTeacherId) {
+        const { data: freshTeacher } = await supabase.from('teachers').select('*').eq('id', newTeacherId).single();
+        if (freshTeacher) {
+          setEditing(freshTeacher as Teacher);
+          return;
+        }
+      }
+      setEditing(null);
+      return;
     } else {
-      // Editing an existing teacher only updates their record, not their login.
       const payload = { ...editing };
       delete (payload as any).id;
       setSaveState('saving');
@@ -172,6 +249,49 @@ export default function Teachers() {
               <p className="mt-2 text-[11px] text-neutral-500">Phone number can't be changed here since it's tied to their login. Use Supabase Authentication directly if it needs to change.</p>
             )}
             {errorMsg && <p className="mt-2 text-sm text-red-400">{errorMsg}</p>}
+
+            {editing.id && (
+              <div className="mt-4 border-t border-neutral-800 pt-3">
+                <h3 className="mb-1 text-sm font-semibold text-gold">Classes & Subjects Assigned</h3>
+                <p className="mb-2 text-[11px] text-neutral-500">
+                  Only what's listed here is visible to this teacher. Removing an assignment doesn't change any grades they already entered.
+                </p>
+
+                {assignments.length === 0 ? (
+                  <p className="mb-2 text-xs text-neutral-500">No assignments yet — this teacher won't see any classes until you add one below.</p>
+                ) : (
+                  <div className="mb-2 space-y-1">
+                    {assignments.map((a) => (
+                      <div key={a.id} className="flex items-center justify-between rounded-lg bg-surface px-2 py-1.5 text-xs">
+                        <span>{subjectName(a.subject_id)} · {className(a.class_id)} · {yearName(a.academic_year_id)}</span>
+                        <button type="button" onClick={() => removeAssignment(a)} className="text-neutral-500 hover:text-red-400">
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+
+                <div className="grid grid-cols-2 gap-2">
+                  <select className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-xs" value={newAssignment.class_id} onChange={(e) => setNewAssignment({ ...newAssignment, class_id: e.target.value })}>
+                    <option value="">Class</option>
+                    {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                  </select>
+                  <select className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-xs" value={newAssignment.subject_id} onChange={(e) => setNewAssignment({ ...newAssignment, subject_id: e.target.value })}>
+                    <option value="">Subject</option>
+                    {subjects.map((s) => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <select className="col-span-2 rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-xs" value={newAssignment.academic_year_id} onChange={(e) => setNewAssignment({ ...newAssignment, academic_year_id: e.target.value })}>
+                    <option value="">Academic Year</option>
+                    {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+                  </select>
+                </div>
+                {assignmentError && <p className="mt-1 text-xs text-red-400">{assignmentError}</p>}
+                <Button type="button" variant="ghost" className="mt-2 w-full" disabled={assignmentSaving} onClick={addAssignment}>
+                  {assignmentSaving ? 'Adding…' : '+ Add Assignment'}
+                </Button>
+              </div>
+            )}
 
             <div className="mt-4 flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>

@@ -9,6 +9,7 @@ import Teachers from './pages/Teachers';
 import Classes from './pages/Classes';
 import Subjects from './pages/Subjects';
 import AssessmentTypes from './pages/AssessmentTypes';
+import TeacherAssignments from './pages/TeacherAssignments';
 import AcademicYears from './pages/AcademicYears';
 import Gradebook from './pages/Gradebook';
 import Attendance from './pages/Attendance';
@@ -41,6 +42,7 @@ export default function App() {
             <Route path="/classes" element={<ProtectedRoute roles={['administrator', 'principal']}><Classes /></ProtectedRoute>} />
             <Route path="/subjects" element={<ProtectedRoute roles={['administrator', 'principal']}><Subjects /></ProtectedRoute>} />
             <Route path="/assessments" element={<ProtectedRoute roles={['administrator', 'principal']}><AssessmentTypes /></ProtectedRoute>} />
+            <Route path="/assignments" element={<ProtectedRoute roles={['administrator', 'principal']}><TeacherAssignments /></ProtectedRoute>} />
             <Route path="/academic-years" element={<ProtectedRoute roles={['administrator', 'principal']}><AcademicYears /></ProtectedRoute>} />
             <Route path="/gradebook" element={<ProtectedRoute roles={['administrator', 'principal', 'teacher', 'academic_officer']}><Gradebook /></ProtectedRoute>} />
             <Route path="/attendance" element={<ProtectedRoute roles={['administrator', 'principal', 'teacher', 'academic_officer']}><Attendance /></ProtectedRoute>} />

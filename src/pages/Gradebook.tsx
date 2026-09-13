@@ -5,19 +5,21 @@ import { useAuth } from '../context/AuthContext';
 import { Button, StatusPill } from '../components/ui';
 import { effectiveGrade, gradeColorClass, isApprovedStatus } from '../lib/periodGrades';
 import { friendlyDbError } from '../lib/errors';
-import type { AcademicYear, Period, SchoolClass, Subject, AssessmentType, Student, Grade, PeriodDirectGrade, GradeStatus } from '../types';
+import type { AcademicYear, Period, SchoolClass, Subject, AssessmentType, Student, Grade, PeriodDirectGrade, GradeStatus, ClassSubjectTeacher } from '../types';
 
 type CellState = 'idle' | 'saving' | 'saved' | 'error';
 type BulkAction = 'idle' | 'submitting' | 'approving' | 'unlocking';
 
 export default function Gradebook() {
-  const { hasRole } = useAuth();
+  const { hasRole, profile } = useAuth();
   const isApprover = hasRole('administrator', 'principal');
+  const isTeacher = hasRole('teacher');
 
   const [years, setYears] = useState<AcademicYear[]>([]);
   const [periods, setPeriods] = useState<Period[]>([]);
   const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [myAssignments, setMyAssignments] = useState<ClassSubjectTeacher[]>([]);
   const [assessmentTypes, setAssessmentTypes] = useState<AssessmentType[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [grades, setGrades] = useState<Grade[]>([]);
@@ -32,6 +34,7 @@ export default function Gradebook() {
   const [error, setError] = useState<string | null>(null);
   const [bulkAction, setBulkAction] = useState<BulkAction>('idle');
   const [bulkMessage, setBulkMessage] = useState<string | null>(null);
+  const [rowAction, setRowAction] = useState<Record<string, 'approving' | 'unlocking'>>({});
 
   useEffect(() => { loadBase(); }, []);
   useEffect(() => { if (classId) loadStudents(); }, [classId]);
@@ -54,6 +57,18 @@ export default function Gradebook() {
     setAssessmentTypes((a as AssessmentType[]) ?? []);
     const active = (y as AcademicYear[])?.find((yr) => yr.status === 'active');
     if (active) setYearId(active.id);
+
+    // Row-level security already restricts the `classes`/`subjects` rows above
+    // to this teacher's assignments. We also load the assignment rows
+    // themselves so the Subject dropdown can be narrowed to only the
+    // subject(s) actually taught in the currently selected class.
+    if (profile) {
+      const { data: teacherRow } = await supabase.from('teachers').select('id').eq('user_id', profile.id).maybeSingle();
+      if (teacherRow) {
+        const { data: assigns } = await supabase.from('class_subject_teachers').select('*').eq('teacher_id', teacherRow.id);
+        setMyAssignments((assigns as ClassSubjectTeacher[]) ?? []);
+      }
+    }
   }
 
   async function loadStudents() {
@@ -69,6 +84,11 @@ export default function Gradebook() {
     setGrades((g as Grade[]) ?? []);
     setDirectGrades((d as PeriodDirectGrade[]) ?? []);
   }
+
+  // For teachers, only offer subjects actually assigned to them for the selected class.
+  const availableSubjects = isTeacher && classId
+    ? subjects.filter((s) => myAssignments.some((a) => a.class_id === classId && a.subject_id === s.id))
+    : subjects;
 
   const ready = yearId && periodId && classId && subjectId;
 
@@ -88,7 +108,6 @@ export default function Gradebook() {
     const scores = assessmentTypes.map((at) => gradeFor(studentId, at.id)).filter((g): g is Grade => !!g);
     return effectiveGrade(scores, directFor(studentId));
   }
-  /** Combined status across all of a student's entries for this subject/period. */
   function periodStatus(studentId: string): 'none' | GradeStatus {
     const statuses: GradeStatus[] = [];
     assessmentTypes.forEach((at) => {
@@ -102,9 +121,11 @@ export default function Gradebook() {
     if (statuses.some((s) => s === 'submitted')) return 'submitted';
     return 'draft';
   }
+  // Only an APPROVED grade locks a teacher out — "submitted" (pending) stays editable
+  // so mistakes can still be fixed before an administrator reviews it.
   function isLockedForEditing(studentId: string) {
-    if (isApprover) return false; // approvers can always edit/correct
-    return periodStatus(studentId) !== 'draft' && periodStatus(studentId) !== 'none';
+    if (isApprover) return false;
+    return isApprovedStatus(periodStatus(studentId));
   }
 
   async function saveAssessment(student: Student, at: AssessmentType, rawValue: string) {
@@ -238,7 +259,7 @@ export default function Gradebook() {
       setBulkMessage('Nothing new to submit — everything here is already submitted or approved.');
       return;
     }
-    if (!confirm(`Submit ${draftGradeIds.length + draftDirectIds.length} grade(s) for review? They'll be locked until an administrator or principal approves them.`)) return;
+    if (!confirm(`Submit ${draftGradeIds.length + draftDirectIds.length} grade(s) for review?`)) return;
     setBulkAction('submitting');
     setBulkMessage('Submitting…');
     if (draftGradeIds.length) await supabase.from('grades').update({ grade_status: 'submitted' }).in('id', draftGradeIds);
@@ -249,40 +270,70 @@ export default function Gradebook() {
     loadGrades();
   }
 
-  async function approveSubmitted() {
-    const submittedGradeIds = grades.filter((g) => g.grade_status === 'submitted').map((g) => g.id);
-    const submittedDirectIds = directGrades.filter((d) => d.status === 'submitted').map((d) => d.id);
-    if (submittedGradeIds.length === 0 && submittedDirectIds.length === 0) {
-      setBulkMessage('Nothing is waiting for approval here.');
+  /** A grade can never be approved below 65 — checked again here as a hard backstop. */
+  function eligibleForApproval(studentId: string): boolean {
+    const t = total(studentId);
+    return t !== null && t >= 65 && t <= 100;
+  }
+
+  async function approveStudent(student: Student) {
+    if (!eligibleForApproval(student.id)) {
+      setError(`Can't approve ${student.first_name} ${student.last_name} — their grade must be between 65 and 100 first.`);
       return;
     }
-    if (!confirm(`Approve ${submittedGradeIds.length + submittedDirectIds.length} grade(s)? They'll become visible on report cards and rankings.`)) return;
-    setBulkAction('approving');
-    setBulkMessage('Approving…');
-    if (submittedGradeIds.length) await supabase.from('grades').update({ grade_status: 'reviewed' }).in('id', submittedGradeIds);
-    if (submittedDirectIds.length) await supabase.from('period_direct_grades').update({ status: 'reviewed' }).in('id', submittedDirectIds);
-    await logActivity('grades_approved', { class_id: classId, subject_id: subjectId, period_id: periodId, count: submittedGradeIds.length + submittedDirectIds.length });
-    setBulkAction('idle');
-    setBulkMessage(`Approved ${submittedGradeIds.length + submittedDirectIds.length} grade(s) — now visible on report cards.`);
+    setRowAction((prev) => ({ ...prev, [student.id]: 'approving' }));
+    const gradeIds = assessmentTypes.map((at) => gradeFor(student.id, at.id)).filter((g): g is Grade => !!g && g.grade_status === 'submitted').map((g) => g.id);
+    const direct = directFor(student.id);
+    if (gradeIds.length) await supabase.from('grades').update({ grade_status: 'reviewed' }).in('id', gradeIds);
+    if (direct && direct.status === 'submitted') await supabase.from('period_direct_grades').update({ status: 'reviewed' }).eq('id', direct.id);
+    await logActivity('grade_approved', { student: `${student.first_name} ${student.last_name}`, subject_id: subjectId, period_id: periodId });
+    setRowAction((prev) => { const next = { ...prev }; delete next[student.id]; return next; });
     loadGrades();
   }
 
-  async function unlockForEditing() {
-    const lockedGradeIds = grades.filter((g) => g.grade_status === 'submitted' || isApprovedStatus(g.grade_status)).map((g) => g.id);
-    const lockedDirectIds = directGrades.filter((d) => d.status === 'submitted' || isApprovedStatus(d.status)).map((d) => d.id);
-    if (lockedGradeIds.length === 0 && lockedDirectIds.length === 0) {
+  async function unlockStudent(student: Student) {
+    setRowAction((prev) => ({ ...prev, [student.id]: 'unlocking' }));
+    const gradeIds = assessmentTypes.map((at) => gradeFor(student.id, at.id)).filter((g): g is Grade => !!g && (g.grade_status === 'submitted' || isApprovedStatus(g.grade_status))).map((g) => g.id);
+    const direct = directFor(student.id);
+    if (gradeIds.length) await supabase.from('grades').update({ grade_status: 'draft' }).in('id', gradeIds);
+    if (direct && (direct.status === 'submitted' || isApprovedStatus(direct.status))) await supabase.from('period_direct_grades').update({ status: 'draft' }).eq('id', direct.id);
+    await logActivity('grade_unlocked', { student: `${student.first_name} ${student.last_name}`, subject_id: subjectId, period_id: periodId });
+    setRowAction((prev) => { const next = { ...prev }; delete next[student.id]; return next; });
+    loadGrades();
+  }
+
+  async function approveAllSubmitted() {
+    const submitted = students.filter((s) => periodStatus(s.id) === 'submitted');
+    if (submitted.length === 0) {
+      setBulkMessage('Nothing is waiting for approval here.');
+      return;
+    }
+    const eligible = submitted.filter((s) => eligibleForApproval(s.id));
+    const blocked = submitted.length - eligible.length;
+    if (eligible.length === 0) {
+      setBulkMessage(`None approved — all ${submitted.length} pending grade(s) are below the minimum of 65.`);
+      return;
+    }
+    if (!confirm(`Approve ${eligible.length} grade(s)? ${blocked > 0 ? `${blocked} will be skipped for being below 65. ` : ''}They'll become visible on report cards and rankings.`)) return;
+    setBulkAction('approving');
+    setBulkMessage('Approving…');
+    for (const s of eligible) await approveStudent(s);
+    setBulkAction('idle');
+    setBulkMessage(`Approved ${eligible.length} grade(s)${blocked > 0 ? `; skipped ${blocked} below the minimum of 65` : ''}.`);
+  }
+
+  async function unlockAllSubmitted() {
+    const locked = students.filter((s) => { const st = periodStatus(s.id); return st === 'submitted' || isApprovedStatus(st); });
+    if (locked.length === 0) {
       setBulkMessage('Nothing here is locked.');
       return;
     }
-    if (!confirm(`Send ${lockedGradeIds.length + lockedDirectIds.length} grade(s) back to the teacher for editing?`)) return;
+    if (!confirm(`Send ${locked.length} grade(s) back to the teacher for editing?`)) return;
     setBulkAction('unlocking');
     setBulkMessage('Unlocking…');
-    if (lockedGradeIds.length) await supabase.from('grades').update({ grade_status: 'draft' }).in('id', lockedGradeIds);
-    if (lockedDirectIds.length) await supabase.from('period_direct_grades').update({ status: 'draft' }).in('id', lockedDirectIds);
-    await logActivity('grades_unlocked', { class_id: classId, subject_id: subjectId, period_id: periodId, count: lockedGradeIds.length + lockedDirectIds.length });
+    for (const s of locked) await unlockStudent(s);
     setBulkAction('idle');
-    setBulkMessage(`Sent ${lockedGradeIds.length + lockedDirectIds.length} grade(s) back to draft for editing.`);
-    loadGrades();
+    setBulkMessage(`Sent ${locked.length} grade(s) back to draft for editing.`);
   }
 
   return (
@@ -292,9 +343,12 @@ export default function Gradebook() {
       <div className="mb-4 grid grid-cols-2 gap-2">
         <Selector label="Academic Year" value={yearId} onChange={setYearId} options={years.map((y) => ({ value: y.id, label: y.name }))} />
         <Selector label="Period" value={periodId} onChange={setPeriodId} options={periods.map((p) => ({ value: p.id, label: p.name }))} />
-        <Selector label="Class" value={classId} onChange={setClassId} options={classes.map((c) => ({ value: c.id, label: c.name }))} />
-        <Selector label="Subject" value={subjectId} onChange={setSubjectId} options={subjects.map((s) => ({ value: s.id, label: s.name }))} />
+        <Selector label="Class" value={classId} onChange={(v) => { setClassId(v); setSubjectId(''); }} options={classes.map((c) => ({ value: c.id, label: c.name }))} />
+        <Selector label="Subject" value={subjectId} onChange={setSubjectId} options={availableSubjects.map((s) => ({ value: s.id, label: s.name }))} />
       </div>
+      {isTeacher && classes.length === 0 && (
+        <p className="mb-3 text-sm text-yellow-500">You don't have any class/subject assignments yet — ask an administrator to assign you in Teacher Assignments.</p>
+      )}
 
       {error && <p className="mb-2 text-sm text-red-400">{error}</p>}
       {bulkMessage && <p className="mb-2 text-sm text-gold">{bulkMessage}</p>}
@@ -308,11 +362,11 @@ export default function Gradebook() {
           <p className="mb-2 text-[11px] text-neutral-500">
             Enter detailed assessment scores OR a single Final Grade per student — not both. Detailed scores always override a Final Grade.
             {isApprover
-              ? ' As an administrator/principal you can still edit locked cells directly.'
-              : ' Once submitted, a grade is locked until an administrator or principal approves or unlocks it.'}
+              ? ' As an administrator/principal you can still edit any cell directly.'
+              : ' A grade only locks once an administrator or principal approves it — until then you can still fix it, even after submitting.'}
           </p>
           <div className="overflow-x-auto rounded-lg border border-neutral-800">
-            <table className="w-full min-w-[760px] text-xs">
+            <table className="w-full min-w-[820px] text-xs">
               <thead>
                 <tr className="bg-ink-soft text-neutral-400">
                   <th className="sticky left-0 z-10 bg-ink-soft p-2 text-left">Student</th>
@@ -322,6 +376,7 @@ export default function Gradebook() {
                   <th className="p-2 text-center font-normal text-gold">Final Grade<div className="text-[9px] text-neutral-600">(direct)</div></th>
                   <th className="p-2 text-center font-normal">Total</th>
                   <th className="p-2 text-center font-normal">Status</th>
+                  {isApprover && <th className="p-2 text-center font-normal">Action</th>}
                 </tr>
               </thead>
               <tbody>
@@ -330,6 +385,7 @@ export default function Gradebook() {
                   const t = total(s.id);
                   const locked = isLockedForEditing(s.id);
                   const status = periodStatus(s.id);
+                  const rowBusy = rowAction[s.id];
                   return (
                     <tr key={s.id} className="border-t border-neutral-800">
                       <td className="sticky left-0 z-10 bg-ink p-2 font-medium">{s.first_name} {s.last_name}</td>
@@ -359,7 +415,7 @@ export default function Gradebook() {
                           disabled={locked || hasDetailed}
                           defaultValue={directFor(s.id)?.score ?? ''}
                           onBlur={(e) => saveDirect(s, e.target.value)}
-                          title={hasDetailed ? 'Locked — detailed assessment scores already entered' : locked ? 'Locked — submitted for review' : ''}
+                          title={hasDetailed ? 'Locked — detailed assessment scores already entered' : locked ? 'Locked — approved' : ''}
                           className="w-16 rounded border border-neutral-700 bg-surface px-1 py-1 text-center disabled:opacity-30"
                         />
                         {cellState[`direct-${s.id}`] === 'saving' && <div className="text-[9px] text-yellow-500">saving…</div>}
@@ -371,6 +427,30 @@ export default function Gradebook() {
                         {status === 'submitted' && <StatusPill text="Pending" tone="warn" />}
                         {isApprovedStatus(status) && <StatusPill text="Approved" tone="good" />}
                       </td>
+                      {isApprover && (
+                        <td className="p-2 text-center">
+                          {status === 'submitted' && (
+                            <Button
+                              variant="ghost"
+                              className="!px-2 !py-1 text-[11px]"
+                              disabled={!!rowBusy}
+                              onClick={() => approveStudent(s)}
+                            >
+                              {rowBusy === 'approving' ? 'Approving…' : 'Approve'}
+                            </Button>
+                          )}
+                          {(status === 'submitted' || isApprovedStatus(status)) && (
+                            <Button
+                              variant="ghost"
+                              className="ml-1 !px-2 !py-1 text-[11px]"
+                              disabled={!!rowBusy}
+                              onClick={() => unlockStudent(s)}
+                            >
+                              {rowBusy === 'unlocking' ? 'Unlocking…' : 'Unlock'}
+                            </Button>
+                          )}
+                        </td>
+                      )}
                     </tr>
                   );
                 })}
@@ -381,11 +461,11 @@ export default function Gradebook() {
           <div className="mt-4 flex flex-wrap justify-end gap-2">
             {isApprover && (
               <>
-                <Button variant="ghost" disabled={bulkAction !== 'idle'} onClick={unlockForEditing}>
-                  {bulkAction === 'unlocking' ? 'Unlocking…' : 'Send Back to Draft'}
+                <Button variant="ghost" disabled={bulkAction !== 'idle'} onClick={unlockAllSubmitted}>
+                  {bulkAction === 'unlocking' ? 'Unlocking…' : 'Send All Back to Draft'}
                 </Button>
-                <Button disabled={bulkAction !== 'idle'} onClick={approveSubmitted}>
-                  {bulkAction === 'approving' ? 'Approving…' : 'Approve Submitted'}
+                <Button disabled={bulkAction !== 'idle'} onClick={approveAllSubmitted}>
+                  {bulkAction === 'approving' ? 'Approving…' : 'Approve All Submitted'}
                 </Button>
               </>
             )}

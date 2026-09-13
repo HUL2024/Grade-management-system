@@ -22,6 +22,8 @@ export interface Period {
   name: string;
   sort_order: number;
   is_exam_period: boolean;
+  start_date: string | null;
+  end_date: string | null;
 }
 
 export interface SchoolClass {
@@ -29,6 +31,14 @@ export interface SchoolClass {
   name: string;
   academic_year_id: string;
   class_teacher_id: string | null;
+}
+
+export interface ClassSubjectTeacher {
+  id: string;
+  class_id: string;
+  subject_id: string;
+  teacher_id: string | null;
+  academic_year_id: string;
 }
 
 export interface Teacher {

@@ -101,7 +101,7 @@ Deno.serve(async (req) => {
     }
 
     // 3. Create their teacher record.
-    const { error: teacherErr } = await admin.from('teachers').insert({
+    const { data: teacherRow, error: teacherErr } = await admin.from('teachers').insert({
       user_id: newUser.user.id,
       teacher_code,
       full_name,
@@ -114,13 +114,13 @@ Deno.serve(async (req) => {
       employment_date: employment_date || null,
       status: status || 'Active',
       photo_url: photo_url || null,
-    });
+    }).select('id').single();
     if (teacherErr) {
       await admin.auth.admin.deleteUser(newUser.user.id);
       return json({ error: `Could not create teacher record: ${teacherErr.message}` }, 400);
     }
 
-    return json({ success: true, user_id: newUser.user.id });
+    return json({ success: true, user_id: newUser.user.id, teacher_id: teacherRow.id });
   } catch (e) {
     return json({ error: e instanceof Error ? e.message : 'Unknown error.' }, 500);
   }

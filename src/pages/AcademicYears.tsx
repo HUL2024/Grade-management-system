@@ -177,6 +177,10 @@ export default function AcademicYears() {
             </div>
             <div className="space-y-2">
               <Input placeholder="Period name (e.g. First Period, Exam 1) *" required value={editingPeriod.name ?? ''} onChange={(e) => setEditingPeriod({ ...editingPeriod, name: e.target.value })} />
+              <div className="grid grid-cols-2 gap-2">
+                <Input type="date" placeholder="Start date (for attendance)" value={editingPeriod.start_date ?? ''} onChange={(e) => setEditingPeriod({ ...editingPeriod, start_date: e.target.value })} />
+                <Input type="date" placeholder="End date (for attendance)" value={editingPeriod.end_date ?? ''} onChange={(e) => setEditingPeriod({ ...editingPeriod, end_date: e.target.value })} />
+              </div>
               <label className="flex items-center gap-2 text-sm text-neutral-300">
                 <input type="checkbox" checked={editingPeriod.is_exam_period ?? false} onChange={(e) => setEditingPeriod({ ...editingPeriod, is_exam_period: e.target.checked })} />
                 This is an exam period

@@ -244,3 +244,83 @@ update, also run `supabase/add_grade_approval_status.sql` once.
 
 Actions that fail (duplicate Student ID, duplicate Teacher ID, etc.) now
 show a specific, plain-language reason instead of a generic "Save failed."
+
+## 15. Teacher access is now scoped — IMPORTANT SETUP STEP
+
+Teachers can now only see and grade the classes/subjects they are actually
+assigned to — enforced at the database level (Row Level Security), not just
+hidden in the UI. This is controlled entirely by the new **Teacher
+Assignments** screen (Administrator/Principal only).
+
+**Without an assignment, a teacher sees nothing** — no classes, no
+students, no subjects, empty Gradebook. So right after running the
+migration below, go to **Teacher Assignments** and assign every teacher to
+every class + subject combination they actually teach (e.g. Mary → Grade 1
+→ Math). A teacher with Math for Grades 5, 6, and 7 needs three separate
+assignment rows.
+
+Run once in the SQL Editor if you already ran earlier migrations:
+```
+supabase/add_teacher_scoping.sql
+```
+This also adds optional start/end dates to periods (for attendance
+reporting) and the `student_conduct` table.
+
+## 16. Grade approval — per-student control
+
+Administrators/Principals can now approve or send back **one student at a
+time** right in the Gradebook (an Approve/Unlock button per row), as well
+as in bulk for the whole class. Either way, a grade can never be approved
+below 65 — it's silently skipped with an explanation if someone tries.
+
+A submitted grade no longer locks immediately — it stays editable by the
+teacher until an administrator/principal actually **approves** it. That's
+the point it becomes locked and visible on report cards/rankings.
+
+## 17. Report card — restored sections + per-period ranking
+
+- **Grading Method** key, **Promotion Statement** (with the four outcome
+  checkboxes), and **Motto** are back on the printed card.
+- **Rank** is now its own row with one rank per column — every period, both
+  semester averages, and the yearly average each get their own class rank,
+  not just one overall rank.
+- **Conduct** is a manually-typed field (Administrator/Principal/Teacher),
+  saved once per student per academic year, shown as its own row.
+- **Attendance %** is its own row, computed automatically from real
+  attendance records — but only for periods that have a start/end date set
+  (Academic Years → edit a period). Periods without dates show "—".
+
+## 18. Report card PDF on Android
+
+Android's WebView (what the APK runs on) has no support for `window.print()`
+at all — that's exactly why the old "Print" button worked in a normal
+browser at `localhost:5173` but did nothing on the phone. Report Cards now
+use a real PDF generator instead:
+
+- **On Android**: the PDF is written to the app's cache and handed to the
+  native Share sheet — the person can save it, send it via WhatsApp, etc.
+- **On the web**: it downloads normally, same as before.
+
+This needed two new Capacitor plugins (`@capacitor/filesystem`,
+`@capacitor/share`) — already wired into `android/`. If you ever add a
+Capacitor plugin yourself, remember to run `npx cap sync android`
+afterward so the native project picks it up (already done here).
+
+## 19. GitHub Actions build environment
+
+The workflow now pins **Node 22** and **JDK 21** — the versions confirmed to
+work with this Capacitor Android project — instead of Node 20 / JDK 17.
+No manual edits should be needed to `build-apk.yml` going forward.
+
+## 20. Adding teachers to classes/subjects
+
+You can now do this in the same place you create a teacher: open
+**Teachers → Add** (or edit an existing teacher), and once the account
+exists a "Classes & Subjects Assigned" section appears right in that form
+— no need to jump to a separate screen or the Supabase backend. The
+standalone **Teacher Assignments** screen still exists too, useful for
+seeing everyone's assignments at once.
+
+Removing an assignment only changes who is *currently* responsible for
+that class/subject going forward — it never touches or reassigns grades a
+previous teacher already entered. Those stay exactly as recorded.
