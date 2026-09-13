@@ -10,6 +10,7 @@ import Classes from './pages/Classes';
 import Subjects from './pages/Subjects';
 import AssessmentTypes from './pages/AssessmentTypes';
 import TeacherAssignments from './pages/TeacherAssignments';
+import Profile from './pages/Profile';
 import AcademicYears from './pages/AcademicYears';
 import Gradebook from './pages/Gradebook';
 import Attendance from './pages/Attendance';
@@ -55,6 +56,7 @@ export default function App() {
             <Route path="/backup" element={<ProtectedRoute roles={['administrator']}><BackupRestore /></ProtectedRoute>} />
             <Route path="/users" element={<ProtectedRoute roles={['administrator']}><UserManagement /></ProtectedRoute>} />
             <Route path="/activity-log" element={<ProtectedRoute roles={['administrator', 'principal']}><ActivityLogPage /></ProtectedRoute>} />
+            <Route path="/profile" element={<Profile />} />
           </Route>
         </Routes>
       </AuthProvider>

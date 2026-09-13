@@ -2,10 +2,11 @@ import { NavLink, Outlet, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   CalendarCheck, FileText, Trophy, History, ArrowUpCircle, BarChart3,
-  CalendarRange, Settings, DatabaseBackup, ShieldCheck, ScrollText, Menu, LogOut, WifiOff, Wifi, ListChecks, UserCog
+  CalendarRange, Settings, DatabaseBackup, ShieldCheck, ScrollText, Menu, LogOut, WifiOff, Wifi, ListChecks, UserCog, UserCircle
 } from 'lucide-react';
 import { useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const NAV = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, roles: null },
@@ -27,6 +28,7 @@ const NAV = [
   { to: '/activity-log', label: 'Activity Log', icon: ScrollText, roles: ['administrator', 'principal'] },
   { to: '/backup', label: 'Backup & Restore', icon: DatabaseBackup, roles: ['administrator'] },
   { to: '/settings', label: 'Settings', icon: Settings, roles: ['administrator'] },
+  { to: '/profile', label: 'My Profile', icon: UserCircle, roles: null },
 ];
 
 export default function Layout() {
@@ -53,8 +55,11 @@ export default function Layout() {
           <div className="text-sm font-semibold text-gold">AJB Leaders Academy</div>
           <div className="text-[10px] text-neutral-400">Grade Management System</div>
         </div>
-        <div className="flex items-center gap-1 text-xs" title={isOnline ? 'Online' : 'Offline — changes will sync later'}>
-          {isOnline ? <Wifi size={16} className="text-green-500" /> : <WifiOff size={16} className="text-red-500" />}
+        <div className="flex items-center gap-2">
+          <NotificationBell />
+          <div className="flex items-center gap-1 text-xs" title={isOnline ? 'Online' : 'Offline — changes will sync later'}>
+            {isOnline ? <Wifi size={16} className="text-green-500" /> : <WifiOff size={16} className="text-red-500" />}
+          </div>
         </div>
       </header>
 

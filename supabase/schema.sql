@@ -242,6 +242,16 @@ create table report_card_comments (
   principal_comment text
 );
 
+-- ---------- NOTIFICATIONS ----------
+create table notifications (
+  id uuid primary key default uuid_generate_v4(),
+  user_id uuid not null references profiles(id) on delete cascade,
+  message text not null,
+  type text not null default 'info',
+  is_read boolean not null default false,
+  created_at timestamptz not null default now()
+);
+
 -- ---------- ACTIVITY LOG ----------
 create table activity_log (
   id uuid primary key default uuid_generate_v4(),
@@ -277,6 +287,7 @@ alter table class_subject_teachers enable row level security;
 alter table academic_history enable row level security;
 alter table report_card_comments enable row level security;
 alter table student_conduct enable row level security;
+alter table notifications enable row level security;
 
 -- Any authenticated, active user can read most academic data (teachers are
 -- scoped further below, once current_teacher_id() is defined).
@@ -463,6 +474,13 @@ create policy "read_student_conduct" on student_conduct for select using (auth.r
 create policy "write_student_conduct" on student_conduct for all
   using (current_user_role() in ('administrator','principal','teacher','academic_officer'))
   with check (current_user_role() in ('administrator','principal','teacher','academic_officer'));
+
+-- Notifications: everyone can read/update only their own; any authenticated
+-- user can create one for someone else (e.g. a teacher notifying admins on
+-- submit, or an admin notifying a teacher on approval).
+create policy "read_own_notifications" on notifications for select using (user_id = auth.uid());
+create policy "update_own_notifications" on notifications for update using (user_id = auth.uid()) with check (user_id = auth.uid());
+create policy "insert_notifications" on notifications for insert with check (auth.role() = 'authenticated');
 
 -- ---------- DEFAULT GRADING SCALE ----------
 insert into grade_scale (min_score, max_score, letter, description, grade_point, color) values

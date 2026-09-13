@@ -47,12 +47,14 @@ export function gradeColorClass(value: number | null): string {
   return 'text-red-400';
 }
 
-/** Same grade-color bands as gradeColorClass, but darker shades for print/white backgrounds. */
-export function gradeColorClassPrint(value: number | null): string {
-  if (value === null) return 'text-black';
-  if (value >= 90) return 'text-green-700';
-  if (value >= 70) return 'text-blue-700';
-  return 'text-red-700';
+/** Same grade-color bands as gradeColorClass, but hex values for contexts
+ * (like html2canvas PDF export) that can't handle Tailwind's oklch-based
+ * palette classes. */
+export function gradeColorHexPrint(value: number | null): string {
+  if (value === null) return '#000000';
+  if (value >= 90) return '#15803d';
+  if (value >= 70) return '#1d4ed8';
+  return '#b91c1c';
 }
 
 /** A grade only counts as "approved" (safe to show on report cards / rankings) at these statuses. */

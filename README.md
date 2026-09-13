@@ -324,3 +324,36 @@ seeing everyone's assignments at once.
 Removing an assignment only changes who is *currently* responsible for
 that class/subject going forward — it never touches or reassigns grades a
 previous teacher already entered. Those stay exactly as recorded.
+
+## 21. Report card download restricted to Administrators/Principals
+
+Teachers can view any report card they have access to, but the
+Download/Share PDF button only appears for Administrators and Principals.
+Teachers instead see a note explaining that.
+
+## 22. My Profile (read-only)
+
+Everyone has a **My Profile** page now. Teachers see their own teacher
+record (ID, phone, qualification, etc.) but can't edit any of it from
+there — only an administrator can change it, via the Teachers screen.
+
+## 23. Notifications
+
+A bell icon in the top bar shows real, unread notifications:
+- Administrators/Principals are notified when a teacher submits grades for
+  review.
+- Teachers are notified when their submitted grade is **approved**, or
+  **sent back as draft** (so they know to fix and resubmit).
+
+Run `supabase/add_notifications.sql` once if you already ran schema.sql
+before this update.
+
+## 24. Report card PDF color bug fixed
+
+Downloading previously failed with "unsupported color function oklab" —
+that came from Tailwind's newer color palette, which html2canvas (the
+library building the PDF) can't parse. Every color inside the printed
+report card now uses plain hex values instead, so PDF export is reliable.
+The report card layout was also reordered: Grading Method (left),
+Promotion Statement (middle, with the student's name and grade
+underlined), Motto (right).

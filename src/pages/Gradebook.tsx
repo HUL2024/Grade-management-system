@@ -5,6 +5,7 @@ import { useAuth } from '../context/AuthContext';
 import { Button, StatusPill } from '../components/ui';
 import { effectiveGrade, gradeColorClass, isApprovedStatus } from '../lib/periodGrades';
 import { friendlyDbError } from '../lib/errors';
+import { notifyApprovers, notifyAssignedTeacher } from '../lib/notifications';
 import type { AcademicYear, Period, SchoolClass, Subject, AssessmentType, Student, Grade, PeriodDirectGrade, GradeStatus, ClassSubjectTeacher } from '../types';
 
 type CellState = 'idle' | 'saving' | 'saved' | 'error';
@@ -91,6 +92,9 @@ export default function Gradebook() {
     : subjects;
 
   const ready = yearId && periodId && classId && subjectId;
+  const subjectName = subjects.find((s) => s.id === subjectId)?.name ?? 'a subject';
+  const className = classes.find((c) => c.id === classId)?.name ?? 'a class';
+  const periodName = periods.find((p) => p.id === periodId)?.name ?? 'this period';
 
   function gradeFor(studentId: string, assessmentTypeId: string) {
     return grades.find((g) => g.student_id === studentId && g.assessment_type_id === assessmentTypeId);
@@ -265,6 +269,7 @@ export default function Gradebook() {
     if (draftGradeIds.length) await supabase.from('grades').update({ grade_status: 'submitted' }).in('id', draftGradeIds);
     if (draftDirectIds.length) await supabase.from('period_direct_grades').update({ status: 'submitted' }).in('id', draftDirectIds);
     await logActivity('grades_submitted', { class_id: classId, subject_id: subjectId, period_id: periodId, count: draftGradeIds.length + draftDirectIds.length });
+    await notifyApprovers(`${profile?.full_name ?? 'A teacher'} submitted ${draftGradeIds.length + draftDirectIds.length} grade(s) for ${subjectName} — ${className} (${periodName}).`);
     setBulkAction('idle');
     setBulkMessage(`Submitted ${draftGradeIds.length + draftDirectIds.length} grade(s) for review.`);
     loadGrades();
@@ -287,6 +292,7 @@ export default function Gradebook() {
     if (gradeIds.length) await supabase.from('grades').update({ grade_status: 'reviewed' }).in('id', gradeIds);
     if (direct && direct.status === 'submitted') await supabase.from('period_direct_grades').update({ status: 'reviewed' }).eq('id', direct.id);
     await logActivity('grade_approved', { student: `${student.first_name} ${student.last_name}`, subject_id: subjectId, period_id: periodId });
+    await notifyAssignedTeacher(classId, subjectId, `${student.first_name} ${student.last_name}'s ${subjectName} grade for ${periodName} was approved.`, 'grade_approved');
     setRowAction((prev) => { const next = { ...prev }; delete next[student.id]; return next; });
     loadGrades();
   }
@@ -298,6 +304,7 @@ export default function Gradebook() {
     if (gradeIds.length) await supabase.from('grades').update({ grade_status: 'draft' }).in('id', gradeIds);
     if (direct && (direct.status === 'submitted' || isApprovedStatus(direct.status))) await supabase.from('period_direct_grades').update({ status: 'draft' }).eq('id', direct.id);
     await logActivity('grade_unlocked', { student: `${student.first_name} ${student.last_name}`, subject_id: subjectId, period_id: periodId });
+    await notifyAssignedTeacher(classId, subjectId, `${student.first_name} ${student.last_name}'s ${subjectName} grade for ${periodName} was sent back as draft — please review and resubmit.`, 'grade_returned');
     setRowAction((prev) => { const next = { ...prev }; delete next[student.id]; return next; });
     loadGrades();
   }
