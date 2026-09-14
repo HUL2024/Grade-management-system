@@ -357,3 +357,58 @@ report card now uses plain hex values instead, so PDF export is reliable.
 The report card layout was also reordered: Grading Method (left),
 Promotion Statement (middle, with the student's name and grade
 underlined), Motto (right).
+
+## 25. Attendance is now period-first, and the report card shows real fractions
+
+Taking attendance now asks for **Academic Year → Period → Class → Date**,
+in that order — matching the Gradebook's flow. Each attendance record is
+tagged with the period it belongs to.
+
+The report card's Attendance row now shows a plain fraction, e.g. **7/10**
+— 7 days present out of 10 total tracked days. The total only counts
+Present + Absent + Excused (Late is recorded but not counted in the
+total, per your spec). Semester/Yearly columns sum the fractions across
+their periods rather than averaging percentages.
+
+Run `supabase/add_attendance_period_and_notify_fix.sql` once if you
+already ran earlier migrations — it adds the `period_id` column to
+attendance and fixes the admin-notification bug below.
+
+## 26. Notification bug fix — admins weren't getting notified
+
+The `profiles` table is intentionally locked so a person can only read
+their own row (protects everyone's role/contact info from each other). That
+meant when a teacher submitted grades, their session had no way to look up
+"who are the administrators" — so the notification silently went nowhere.
+Fixed with a narrow database function that safely returns just the
+administrator/principal user ids, without opening up the profiles table
+itself. Notifications also now **disappear once read** instead of sitting
+around grayed out — the bell only ever shows what's still unread.
+
+## 27. Pull-to-refresh
+
+Pulling down from the top of any screen reloads the app — same gesture
+people already expect from other mobile apps.
+
+## 28. Auto-logout after 30 minutes
+
+Every account — Administrator, Principal, Teacher, everyone — is signed
+out automatically after 30 minutes with no activity (no taps, scrolling,
+or typing). Any interaction resets the clock.
+
+## 29. Report card download, restricted + bulk
+
+- Only Administrators/Principals see a download button at all; teachers
+  can view a report card but not download it.
+- **Download All (N students) for [Class]** builds one combined PDF with
+  every active student's report card as its own page — for printing a
+  whole class at once. This can take a little while for large classes
+  since it renders each student's card in turn.
+
+## 30. PDF export no longer crops content
+
+The old single-page-shrink approach could make content look cut off if it
+was tall (e.g. the promotion statement checkboxes at the bottom). Report
+cards now paginate properly — if content is too long for one sheet, it
+continues onto a second page instead of being cropped or squeezed
+unreadably small.

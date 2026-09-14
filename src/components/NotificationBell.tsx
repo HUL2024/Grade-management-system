@@ -22,24 +22,24 @@ export default function NotificationBell() {
       .from('notifications')
       .select('*')
       .eq('user_id', profile.id)
+      .eq('is_read', false)
       .order('created_at', { ascending: false })
       .limit(20);
     setNotifications((data as AppNotification[]) ?? []);
   }
 
-  const unreadCount = notifications.filter((n) => !n.is_read).length;
+  const unreadCount = notifications.length;
 
   async function markAllRead() {
-    const unreadIds = notifications.filter((n) => !n.is_read).map((n) => n.id);
+    const unreadIds = notifications.map((n) => n.id);
     if (unreadIds.length === 0) return;
     await supabase.from('notifications').update({ is_read: true }).in('id', unreadIds);
-    load();
+    setNotifications([]);
   }
 
   async function markRead(n: AppNotification) {
-    if (n.is_read) return;
     await supabase.from('notifications').update({ is_read: true }).eq('id', n.id);
-    load();
+    setNotifications((prev) => prev.filter((item) => item.id !== n.id));
   }
 
   function timeAgo(iso: string) {
@@ -70,20 +70,20 @@ export default function NotificationBell() {
             <div className="flex items-center justify-between border-b border-neutral-800 p-2">
               <span className="text-xs font-semibold text-neutral-300">Notifications</span>
               {unreadCount > 0 && (
-                <button onClick={markAllRead} className="text-[11px] text-gold">Mark all read</button>
+                <button onClick={markAllRead} className="text-[11px] text-gold">Clear all</button>
               )}
             </div>
             {notifications.length === 0 ? (
-              <p className="p-3 text-center text-xs text-neutral-500">No notifications yet.</p>
+              <p className="p-3 text-center text-xs text-neutral-500">No new notifications.</p>
             ) : (
               notifications.map((n) => (
                 <button
                   key={n.id}
                   onClick={() => markRead(n)}
-                  className={`block w-full border-b border-neutral-800 p-2 text-left text-xs last:border-0 ${n.is_read ? 'text-neutral-400' : 'text-neutral-100'}`}
+                  className="block w-full border-b border-neutral-800 p-2 text-left text-xs text-neutral-100 last:border-0"
                 >
                   <div className="flex items-start gap-1.5">
-                    {!n.is_read && <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />}
+                    <span className="mt-1 h-1.5 w-1.5 shrink-0 rounded-full bg-gold" />
                     <span>{n.message}</span>
                   </div>
                   <div className="mt-0.5 text-[10px] text-neutral-500">{timeAgo(n.created_at)}</div>

@@ -212,6 +212,7 @@ create table attendance (
   student_id uuid not null references students(id) on delete cascade,
   class_id uuid not null references classes(id) on delete cascade,
   academic_year_id uuid not null references academic_years(id) on delete cascade,
+  period_id uuid references periods(id) on delete set null,
   date date not null,
   status text not null check (status in ('Present','Absent','Late','Excused')),
   marked_by uuid references profiles(id),
@@ -309,6 +310,15 @@ create or replace function current_teacher_id() returns uuid
 language sql security definer stable as $$
   select id from teachers where user_id = auth.uid();
 $$;
+
+-- Lets ANY authenticated user (e.g. a teacher submitting grades) find who
+-- to notify, without granting broad read access to the `profiles` table
+-- itself (profiles stays locked to "read your own row only").
+create or replace function get_approver_user_ids() returns setof uuid
+language sql security definer stable as $$
+  select id from profiles where role in ('administrator','principal') and is_active = true;
+$$;
+grant execute on function get_approver_user_ids() to authenticated;
 
 -- Students: teachers only see students in classes assigned to them.
 create policy "read_students_scoped" on students for select using (

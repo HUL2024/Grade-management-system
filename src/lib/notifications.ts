@@ -10,8 +10,11 @@ export async function notifyUsers(userIds: string[], message: string, type: stri
 
 /** Notifies every active Administrator/Principal. */
 export async function notifyApprovers(message: string, type: string = 'grade_submitted') {
-  const { data } = await supabase.from('profiles').select('id').in('role', ['administrator', 'principal']).eq('is_active', true);
-  await notifyUsers((data ?? []).map((p) => p.id), message, type);
+  // Teachers can't read the profiles table directly (it's locked to "own
+  // row only"), so we go through a SECURITY DEFINER function that safely
+  // returns just the approver user ids.
+  const { data } = await supabase.rpc('get_approver_user_ids');
+  await notifyUsers((data ?? []) as string[], message, type);
 }
 
 /** Notifies the teacher assigned to a given class+subject, if any. */

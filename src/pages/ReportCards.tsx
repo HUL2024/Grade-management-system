@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { Button, Input } from '../components/ui';
 import { effectiveApprovedGrade, roundWhole, roundOneDecimal, gradeColorHexPrint } from '../lib/periodGrades';
 import { computeRanks } from '../lib/grading';
-import { exportElementAsPdf } from '../lib/pdf';
+import { exportElementAsPdf, exportManyAsPdf } from '../lib/pdf';
 import { useAuth } from '../context/AuthContext';
 import type { SchoolClass, Student, Grade, PeriodDirectGrade, Period, Subject, SchoolSettings, AttendanceRecord } from '../types';
 
@@ -45,6 +45,8 @@ export default function ReportCards() {
   const [settings, setSettings] = useState<SchoolSettings | null>(null);
   const [exporting, setExporting] = useState(false);
   const [exportError, setExportError] = useState<string | null>(null);
+  const [bulkExporting, setBulkExporting] = useState(false);
+  const [bulkProgress, setBulkProgress] = useState('');
 
   useEffect(() => {
     Promise.all([
@@ -88,12 +90,13 @@ export default function ReportCards() {
     return effectiveApprovedGrade(scores, direct);
   }
 
-  function attendanceFor(forStudentId: string, period: Period): number | null {
-    if (!period.start_date || !period.end_date) return null;
-    const records = classAttendance.filter((a) => a.student_id === forStudentId && a.date >= period.start_date! && a.date <= period.end_date!);
+  /** Present/Total for one period. Total = Present + Absent + Excused (Late is tracked but excluded from the total). */
+  function attendanceFor(forStudentId: string, period: Period): { present: number; total: number } | null {
+    const records = classAttendance.filter((a) => a.student_id === forStudentId && a.period_id === period.id);
     if (records.length === 0) return null;
     const present = records.filter((a) => a.status === 'Present').length;
-    return Math.round((present / records.length) * 100);
+    const total = records.filter((a) => a.status === 'Present' || a.status === 'Absent' || a.status === 'Excused').length;
+    return { present, total };
   }
 
   function buildStudentReport(forStudentId: string) {
@@ -193,8 +196,39 @@ export default function ReportCards() {
     setExporting(false);
   }
 
+  async function handleBulkDownload() {
+    if (!classId || students.length === 0) return;
+    setExportError(null);
+    setBulkExporting(true);
+    const previousStudentId = studentId;
+    try {
+      await exportManyAsPdf(
+        'report-card-print',
+        students.length,
+        async (index) => {
+          setBulkProgress(`Rendering ${index + 1} of ${students.length}…`);
+          setStudentId(students[index].id);
+          // Let React commit the state change and paint before capturing.
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+        },
+        `${cls?.name ?? 'class'}-report-cards`
+      );
+    } catch (err) {
+      setExportError(err instanceof Error ? err.message : 'Could not generate the class PDF.');
+    }
+    setStudentId(previousStudentId);
+    setBulkProgress('');
+    setBulkExporting(false);
+  }
+
   const cellBorder = { border: `1px solid ${C.blue100}`, padding: '4px' };
   const headBorder = { border: `1px solid ${C.blue200}`, padding: '4px' };
+
+  function formatAttendanceFraction(values: ({ present: number; total: number } | null)[]): string {
+    const present = values.reduce((sum, v) => sum + (v?.present ?? 0), 0);
+    const total = values.reduce((sum, v) => sum + (v?.total ?? 0), 0);
+    return total > 0 ? `${present}/${total}` : '—';
+  }
 
   return (
     <div className="p-4">
@@ -202,15 +236,23 @@ export default function ReportCards() {
         <h1 className="text-lg font-semibold text-gold">Report Cards</h1>
       </div>
       <div className="no-print mb-3 grid grid-cols-2 gap-2">
-        <select value={classId} onChange={(e) => { setClassId(e.target.value); setStudentId(''); }} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
+        <select value={classId} disabled={bulkExporting} onChange={(e) => { setClassId(e.target.value); setStudentId(''); }} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
           <option value="">Class</option>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <select value={studentId} onChange={(e) => setStudentId(e.target.value)} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
+        <select value={studentId} disabled={bulkExporting} onChange={(e) => setStudentId(e.target.value)} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
           <option value="">Student</option>
           {students.map((s) => <option key={s.id} value={s.id}>{s.first_name} {s.last_name}</option>)}
         </select>
       </div>
+
+      {canDownload && classId && students.length > 0 && (
+        <div className="no-print mb-3">
+          <Button variant="ghost" className="w-full" disabled={bulkExporting || exporting} onClick={handleBulkDownload}>
+            {bulkExporting ? (bulkProgress || 'Preparing…') : `Download All (${students.length} students) for ${cls?.name ?? 'this class'}`}
+          </Button>
+        </div>
+      )}
 
       {!student || !report || !studentRanks ? (
         <p className="py-10 text-center text-sm text-neutral-500">Select a class and student to view their report card.</p>
@@ -277,12 +319,12 @@ export default function ReportCards() {
                   <td style={{ ...headBorder, textAlign: 'center' }}>{studentRanks.yearly ?? ''}</td>
                 </tr>
                 <tr>
-                  <td style={{ ...headBorder, fontWeight: 600, color: C.blue900 }}>Attendance %</td>
-                  {report.attendance.sem1.map((v, i) => <td key={i} style={{ ...headBorder, textAlign: 'center' }}>{v ?? '—'}</td>)}
-                  <td style={{ ...headBorder, textAlign: 'center' }}>{roundWhole(report.attendance.sem1) ?? '—'}</td>
-                  {report.attendance.sem2.map((v, i) => <td key={i} style={{ ...headBorder, textAlign: 'center' }}>{v ?? '—'}</td>)}
-                  <td style={{ ...headBorder, textAlign: 'center' }}>{roundWhole(report.attendance.sem2) ?? '—'}</td>
-                  <td style={{ ...headBorder, textAlign: 'center' }}>{roundWhole([...report.attendance.sem1, ...report.attendance.sem2]) ?? '—'}</td>
+                  <td style={{ ...headBorder, fontWeight: 600, color: C.blue900 }}>Attendance</td>
+                  {report.attendance.sem1.map((v, i) => <td key={i} style={{ ...headBorder, textAlign: 'center' }}>{v ? `${v.present}/${v.total}` : '—'}</td>)}
+                  <td style={{ ...headBorder, textAlign: 'center' }}>{formatAttendanceFraction(report.attendance.sem1)}</td>
+                  {report.attendance.sem2.map((v, i) => <td key={i} style={{ ...headBorder, textAlign: 'center' }}>{v ? `${v.present}/${v.total}` : '—'}</td>)}
+                  <td style={{ ...headBorder, textAlign: 'center' }}>{formatAttendanceFraction(report.attendance.sem2)}</td>
+                  <td style={{ ...headBorder, textAlign: 'center' }}>{formatAttendanceFraction([...report.attendance.sem1, ...report.attendance.sem2])}</td>
                 </tr>
                 <tr>
                   <td style={{ ...headBorder, fontWeight: 600, color: C.blue900 }}>Conduct</td>
@@ -327,7 +369,7 @@ export default function ReportCards() {
 
           {exportError && <p className="no-print mt-2 text-sm text-red-400">{exportError}</p>}
           {canDownload ? (
-            <Button className="no-print mt-3 w-full" onClick={handleDownload} disabled={exporting}>
+            <Button className="no-print mt-3 w-full" onClick={handleDownload} disabled={exporting || bulkExporting}>
               {exporting ? 'Generating PDF…' : 'Download / Share PDF'}
             </Button>
           ) : (

@@ -2,28 +2,36 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { logActivity } from '../lib/activityLog';
 import { Button, Card, SavingIndicator } from '../components/ui';
-import type { SchoolClass, Student, AttendanceRecord, AttendanceStatus, AcademicYear } from '../types';
+import type { SchoolClass, Student, AttendanceRecord, AttendanceStatus, AcademicYear, Period } from '../types';
 
 const STATUSES: AttendanceStatus[] = ['Present', 'Absent', 'Late', 'Excused'];
 
 export default function Attendance() {
-  const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [years, setYears] = useState<AcademicYear[]>([]);
+  const [periods, setPeriods] = useState<Period[]>([]);
+  const [classes, setClasses] = useState<SchoolClass[]>([]);
   const [students, setStudents] = useState<Student[]>([]);
   const [records, setRecords] = useState<AttendanceRecord[]>([]);
+  const [yearId, setYearId] = useState('');
+  const [periodId, setPeriodId] = useState('');
   const [classId, setClassId] = useState('');
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [rowState, setRowState] = useState<Record<string, 'idle' | 'saving' | 'saved' | 'error'>>({});
 
   useEffect(() => {
-    Promise.all([
-      supabase.from('classes').select('*').order('name'),
-      supabase.from('academic_years').select('*').eq('status', 'active'),
-    ]).then(([{ data: c }, { data: y }]) => {
-      setClasses((c as SchoolClass[]) ?? []);
-      setYears((y as AcademicYear[]) ?? []);
+    supabase.from('academic_years').select('*').order('name', { ascending: false }).then(({ data }) => {
+      const list = (data as AcademicYear[]) ?? [];
+      setYears(list);
+      const active = list.find((y) => y.status === 'active');
+      if (active) setYearId(active.id);
     });
   }, []);
+
+  useEffect(() => {
+    if (!yearId) return;
+    supabase.from('periods').select('*').eq('academic_year_id', yearId).order('sort_order').then(({ data }) => setPeriods((data as Period[]) ?? []));
+    supabase.from('classes').select('*').eq('academic_year_id', yearId).order('name').then(({ data }) => setClasses((data as SchoolClass[]) ?? []));
+  }, [yearId]);
 
   useEffect(() => {
     if (classId) {
@@ -39,19 +47,22 @@ export default function Attendance() {
     }
   }, [classId, date]);
 
+  const selectedPeriod = periods.find((p) => p.id === periodId);
+  const ready = yearId && periodId && classId;
+
   function recordFor(studentId: string) {
     return records.find((r) => r.student_id === studentId);
   }
 
   async function mark(studentId: string, status: AttendanceStatus) {
     setRowState((prev) => ({ ...prev, [studentId]: 'saving' }));
-    const activeYear = years[0];
     const existing = recordFor(studentId);
     const { data: userData } = await supabase.auth.getUser();
     const payload = {
       student_id: studentId,
       class_id: classId,
-      academic_year_id: activeYear?.id,
+      academic_year_id: yearId,
+      period_id: periodId,
       date,
       status,
       marked_by: userData.user?.id ?? null,
@@ -74,22 +85,37 @@ export default function Attendance() {
     for (const s of students) {
       if (!recordFor(s.id)) await mark(s.id, 'Present');
     }
-    await logActivity('attendance_bulk_marked', { class_id: classId, date });
+    await logActivity('attendance_bulk_marked', { class_id: classId, period_id: periodId, date });
   }
 
   return (
     <div className="p-4">
       <h1 className="mb-3 text-lg font-semibold text-gold">Attendance</h1>
-      <div className="mb-3 flex gap-2">
-        <select value={classId} onChange={(e) => setClassId(e.target.value)} className="flex-1 rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
-          <option value="">Select class</option>
+      <div className="mb-3 grid grid-cols-2 gap-2">
+        <select value={yearId} onChange={(e) => { setYearId(e.target.value); setPeriodId(''); setClassId(''); }} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
+          <option value="">Academic Year</option>
+          {years.map((y) => <option key={y.id} value={y.id}>{y.name}</option>)}
+        </select>
+        <select value={periodId} onChange={(e) => setPeriodId(e.target.value)} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
+          <option value="">Period</option>
+          {periods.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+        </select>
+        <select value={classId} onChange={(e) => setClassId(e.target.value)} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm">
+          <option value="">Class</option>
           {classes.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
         </select>
-        <input type="date" value={date} onChange={(e) => setDate(e.target.value)} className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm" />
+        <input
+          type="date"
+          value={date}
+          min={selectedPeriod?.start_date ?? undefined}
+          max={selectedPeriod?.end_date ?? undefined}
+          onChange={(e) => setDate(e.target.value)}
+          className="rounded-lg border border-neutral-700 bg-surface px-2 py-2 text-sm"
+        />
       </div>
 
-      {!classId ? (
-        <p className="py-10 text-center text-sm text-neutral-500">Select a class to mark attendance.</p>
+      {!ready ? (
+        <p className="py-10 text-center text-sm text-neutral-500">Select academic year, period and class to begin.</p>
       ) : students.length === 0 ? (
         <p className="py-10 text-center text-sm text-neutral-500">No active students in this class.</p>
       ) : (

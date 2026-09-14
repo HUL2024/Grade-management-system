@@ -139,6 +139,7 @@ export interface AttendanceRecord {
   student_id: string;
   class_id: string;
   academic_year_id: string;
+  period_id: string | null;
   date: string;
   status: AttendanceStatus;
 }

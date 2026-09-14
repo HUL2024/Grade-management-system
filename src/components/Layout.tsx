@@ -4,7 +4,7 @@ import {
   CalendarCheck, FileText, Trophy, History, ArrowUpCircle, BarChart3,
   CalendarRange, Settings, DatabaseBackup, ShieldCheck, ScrollText, Menu, LogOut, WifiOff, Wifi, ListChecks, UserCog, UserCircle
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
 
@@ -34,6 +34,25 @@ const NAV = [
 export default function Layout() {
   const { profile, isOnline, signOut, hasRole } = useAuth();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [pulling, setPulling] = useState(false);
+  const pullStartY = useRef(0);
+  const mainRef = useRef<HTMLElement>(null);
+
+  function handleTouchStart(e: React.TouchEvent) {
+    pullStartY.current = mainRef.current && mainRef.current.scrollTop <= 0 ? e.touches[0].clientY : 0;
+  }
+  function handleTouchMove(e: React.TouchEvent) {
+    if (pullStartY.current && e.touches[0].clientY - pullStartY.current > 70) {
+      setPulling(true);
+    }
+  }
+  function handleTouchEnd() {
+    if (pulling) {
+      window.location.reload();
+    }
+    pullStartY.current = 0;
+    setPulling(false);
+  }
   const navigate = useNavigate();
 
   const visibleNav = NAV.filter((item) => !item.roles || hasRole(...(item.roles as any)));
@@ -109,7 +128,16 @@ export default function Layout() {
       )}
 
       {/* Page content */}
-      <main className="flex-1 overflow-y-auto pb-16">
+      <main
+        ref={mainRef}
+        className="flex-1 overflow-y-auto pb-16"
+        onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
+        onTouchEnd={handleTouchEnd}
+      >
+        {pulling && (
+          <div className="no-print py-2 text-center text-xs text-gold">Release to refresh…</div>
+        )}
         <Outlet />
       </main>
 
