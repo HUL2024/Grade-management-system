@@ -412,3 +412,32 @@ was tall (e.g. the promotion statement checkboxes at the bottom). Report
 cards now paginate properly — if content is too long for one sheet, it
 continues onto a second page instead of being cropped or squeezed
 unreadably small.
+
+## 31. Notification bug fixed (root cause found)
+
+Postgres functions that `return setof uuid` come back from Supabase as
+`[{"get_approver_user_ids": "..."}]`, not a plain array of strings — the
+earlier code assumed the latter, so every admin notification was silently
+being built with an invalid `user_id` and failing to insert. Fixed by
+giving the function a named return column, so the shape is unambiguous,
+and by wrapping every notification call in its own error handling so a
+notification failure can never block the actual grade action again.
+
+**Run `supabase/add_attendance_period_and_notify_fix.sql` again** — even
+if you ran it before, it safely re-creates the corrected function.
+
+## 32. Camera support for photos
+
+Students and Teachers now have two buttons — **Camera** and **Gallery** —
+using Capacitor's native camera plugin instead of a plain file picker.
+Camera opens the device camera directly; Gallery opens the photo library.
+Both still get compressed to under 50KB automatically.
+
+## 33. App icon — "AJB"
+
+The Android launcher icon (and splash screen) is now a gold "AJB" wordmark
+in a circle on black, matching the school's branding — generated at every
+required size/density, including the adaptive icon Android 8+ uses. Source
+files are in `assets/` (`icon.png`, `icon-foreground.png`,
+`icon-background.png`, `splash.png`) if you ever want to regenerate them
+with `npx capacitor-assets generate --android` after editing those files.

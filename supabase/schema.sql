@@ -313,8 +313,9 @@ $$;
 
 -- Lets ANY authenticated user (e.g. a teacher submitting grades) find who
 -- to notify, without granting broad read access to the `profiles` table
--- itself (profiles stays locked to "read your own row only").
-create or replace function get_approver_user_ids() returns setof uuid
+-- itself (profiles stays locked to "read your own row only"). Returns a
+-- named column (not a bare scalar) so the JSON shape is unambiguous.
+create or replace function get_approver_user_ids() returns table(user_id uuid)
 language sql security definer stable as $$
   select id from profiles where role in ('administrator','principal') and is_active = true;
 $$;

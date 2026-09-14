@@ -7,8 +7,9 @@ alter table attendance add column if not exists period_id uuid references period
 -- the `profiles` table is intentionally locked to "read your own row only" —
 -- a teacher's session had no way to look up who the administrators are.
 -- This function returns just their user ids, safely, without opening up
--- read access to the whole profiles table.
-create or replace function get_approver_user_ids() returns setof uuid
+-- read access to the whole profiles table. Returns a named column (not a
+-- bare scalar) so the JSON shape from the client is unambiguous.
+create or replace function get_approver_user_ids() returns table(user_id uuid)
 language sql security definer stable as $$
   select id from profiles where role in ('administrator','principal') and is_active = true;
 $$;

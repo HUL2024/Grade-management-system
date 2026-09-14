@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 
 const MAX_BYTES = 50 * 1024; // 50KB
 const BUCKET = 'photos';
@@ -67,4 +68,32 @@ export async function uploadPhoto(file: File, folder: 'students' | 'teachers'): 
 
   const { data } = supabase.storage.from(BUCKET).getPublicUrl(path);
   return data.publicUrl;
+}
+
+/** Opens the device camera (or, on web, whatever the browser offers for
+ * camera capture) and returns the photo as a File, ready for uploadPhoto(). */
+export async function takePhotoWithCamera(): Promise<File> {
+  const photo = await Camera.getPhoto({
+    quality: 85,
+    resultType: CameraResultType.DataUrl,
+    source: CameraSource.Camera,
+    saveToGallery: false,
+  });
+  return dataUrlToFile(photo.dataUrl!);
+}
+
+/** Opens the device's photo gallery/library. */
+export async function pickPhotoFromGallery(): Promise<File> {
+  const photo = await Camera.getPhoto({
+    quality: 85,
+    resultType: CameraResultType.DataUrl,
+    source: CameraSource.Photos,
+  });
+  return dataUrlToFile(photo.dataUrl!);
+}
+
+async function dataUrlToFile(dataUrl: string): Promise<File> {
+  const res = await fetch(dataUrl);
+  const blob = await res.blob();
+  return new File([blob], `photo-${Date.now()}.jpg`, { type: blob.type || 'image/jpeg' });
 }
