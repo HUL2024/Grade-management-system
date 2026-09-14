@@ -441,3 +441,84 @@ required size/density, including the adaptive icon Android 8+ uses. Source
 files are in `assets/` (`icon.png`, `icon-foreground.png`,
 `icon-background.png`, `splash.png`) if you ever want to regenerate them
 with `npx capacitor-assets generate --android` after editing those files.
+
+## 34. Safe areas — status bar, notch, gesture nav bar
+
+Fixed at both the native Android layer and in CSS, so it holds across every
+phone shape (notches, punch-hole cameras, tall gesture bars) and Android
+version:
+
+- `MainActivity.java` now explicitly opts into edge-to-edge on every Android
+  version (`WindowCompat.setDecorFitsSystemWindows(window, false)`), so
+  behavior is consistent instead of only happening on newer phones where
+  Google now forces it anyway (Android 15+ requires edge-to-edge for apps
+  targeting SDK 35, which this app does).
+- The status bar is set to overlay the WebView with light icons
+  (`@capacitor/status-bar`), matching the dark theme.
+- The header, bottom navigation, the slide-out menu, and the login screen
+  all use `env(safe-area-inset-top/bottom/left/right)` via new `.safe-top`
+  /`.safe-bottom`/`.safe-left`/`.safe-right` CSS classes — these resolve to
+  `0px` on phones without a notch/gesture bar, so nothing changes on those
+  devices; they only add space where a phone actually needs it.
+- `html`/`body`/`#root` use `100dvh` (dynamic viewport height) instead of a
+  fixed `100%`, so the layout adjusts correctly as Android's gesture bar or
+  keyboard show/hide.
+- The bottom nav's clearance is computed with `calc(4rem + env(safe-area-
+  inset-bottom))` rather than a flat padding value, so it stays correctly
+  sized regardless of how tall a given phone's gesture area is.
+
+**Honest limitation**: I don't have a physical Android device or emulator
+in this environment to visually confirm on real hardware — the approach
+above is the standard, correct fix for this exact class of problem, and it
+degrades gracefully (extra padding only appears where truly needed), but
+please do a quick visual check on your phone after installing the next
+build, especially on whichever device originally showed the problem.
+
+## 35. Android app updates — installing over the existing app
+
+This was two separate root causes, both fixed:
+
+**1. Inconsistent signing (the main cause).** The workflow was building a
+*debug* APK. Debug builds are auto-signed with a debug keystore that GitHub
+Actions regenerates from scratch on every run (its runners are thrown away
+after each job) — so every build had a different signature, and Android
+correctly refuses to install an APK signed with a different key than the
+one already installed, forcing an uninstall. The workflow now builds a
+properly signed **release** APK using one persistent keystore.
+
+**2. Version code never changed.** `versionCode` was hardcoded to `1` on
+every build. Android requires a strictly higher `versionCode` to accept an
+install as an update. The workflow now sets it automatically from the
+GitHub Actions run number, so it always increases — no manual bumping,
+ever.
+
+### One-time setup you need to do
+
+I generated a release keystore for you — it's in the separate
+`ajb-android-signing-KEEP-PRIVATE.zip` file (not inside the main project
+zip, so it can't accidentally get committed to GitHub). **This file is
+irreplaceable** — if you lose it, you'll never be able to publish another
+update to anyone who already has the app installed; they'd all need to
+uninstall and reinstall. Back it up somewhere safe (password manager,
+private cloud storage) the moment you receive it.
+
+In your GitHub repo, go to **Settings → Secrets and variables → Actions**
+and add these repository secrets:
+
+| Secret name | Value |
+|---|---|
+| `ANDROID_KEYSTORE_BASE64` | contents of `ajb-release.keystore.base64.txt` |
+| `ANDROID_KEYSTORE_PASSWORD` | from `CREDENTIALS-KEEP-SAFE.txt` |
+| `ANDROID_KEY_ALIAS` | `ajbgrades` |
+| `ANDROID_KEY_PASSWORD` | same as the keystore password |
+
+Once those are set, every future build is signed consistently and will
+install as a clean update. If you ever build and get a warning in the
+Actions log about `ANDROID_KEYSTORE_BASE64` not being set, it built an
+**unsigned** APK as a fallback — that one still can't be updated cleanly,
+so don't distribute it until the secrets are in place.
+
+**Important**: since this switches from a debug APK to a signed release
+APK, the very next install will still require everyone to uninstall the
+old (differently-signed) debug version one last time. Every build after
+that will update in place normally.

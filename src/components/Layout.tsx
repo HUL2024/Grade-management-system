@@ -66,7 +66,7 @@ export default function Layout() {
   return (
     <div className="flex h-full flex-col bg-ink text-neutral-100">
       {/* Top bar */}
-      <header className="no-print flex items-center justify-between border-b border-gold/20 bg-ink-soft px-4 py-3">
+      <header className="no-print safe-top safe-left safe-right flex items-center justify-between border-b border-gold/20 bg-ink-soft px-4 py-3">
         <button onClick={() => setMenuOpen(true)} className="p-1 text-gold">
           <Menu size={22} />
         </button>
@@ -91,7 +91,7 @@ export default function Layout() {
       {/* Slide-out menu */}
       {menuOpen && (
         <div className="no-print fixed inset-0 z-50 flex">
-          <div className="w-72 overflow-y-auto bg-ink-soft p-3">
+          <div className="safe-top safe-bottom w-72 overflow-y-auto bg-ink-soft p-3">
             <div className="mb-3 flex items-center justify-between">
               <div>
                 <div className="font-semibold text-gold">{profile?.full_name}</div>
@@ -130,7 +130,7 @@ export default function Layout() {
       {/* Page content */}
       <main
         ref={mainRef}
-        className="flex-1 overflow-y-auto pb-16"
+        className="main-bottom-pad flex-1 overflow-y-auto safe-left safe-right"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -142,7 +142,7 @@ export default function Layout() {
       </main>
 
       {/* Bottom nav (mobile) */}
-      <nav className="no-print fixed bottom-0 left-0 right-0 z-40 flex border-t border-gold/20 bg-ink-soft">
+      <nav className="no-print bottom-nav-safe safe-left safe-right fixed bottom-0 left-0 right-0 z-40 flex border-t border-gold/20 bg-ink-soft">
         {bottomNav.map((item) => (
           <NavLink
             key={item.to}

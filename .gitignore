@@ -9,3 +9,7 @@ android/.gradle
 android/local.properties
 *.local
 .DS_Store
+*.keystore
+*.jks
+keystore-output/
+CREDENTIALS-KEEP-SAFE.txt

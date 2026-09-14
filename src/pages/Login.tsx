@@ -40,7 +40,7 @@ export default function Login() {
   }
 
   return (
-    <div className="flex h-full flex-col items-center justify-center bg-ink px-6">
+    <div className="safe-top safe-bottom safe-left safe-right flex h-full flex-col items-center justify-center bg-ink px-6">
       <div className="mb-8 text-center">
         <div className="mx-auto mb-3 flex h-16 w-16 items-center justify-center rounded-full border-2 border-gold text-2xl font-bold text-gold">
           AJB
