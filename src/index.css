@@ -16,6 +16,7 @@ html, body, #root {
 
 :root {
   --app-height: 100vh;
+  --safe-area-top: env(safe-area-inset-top, 0px);
   --safe-area-bottom: env(safe-area-inset-bottom, 0px);
 }
 
@@ -28,6 +29,7 @@ html, body, #root {
 .app-shell {
   height: var(--app-height);
   min-height: 100svh;
+  padding-top: var(--safe-area-top);
 }
 
 .app-content {
@@ -38,6 +40,11 @@ html, body, #root {
 .app-bottom-nav {
   height: calc(4rem + var(--safe-area-bottom));
   min-height: calc(4rem + var(--safe-area-bottom));
+  padding-bottom: var(--safe-area-bottom);
+}
+
+.app-overlay {
+  padding-top: var(--safe-area-top);
   padding-bottom: var(--safe-area-bottom);
 }
 

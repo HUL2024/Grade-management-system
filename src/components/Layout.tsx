@@ -90,7 +90,7 @@ export default function Layout() {
 
       {/* Slide-out menu */}
       {menuOpen && (
-        <div className="no-print fixed inset-0 z-50 flex">
+        <div className="app-overlay no-print fixed inset-0 z-50 flex">
           <div className="w-72 overflow-y-auto bg-ink-soft p-3">
             <div className="mb-3 flex items-center justify-between">
               <div>

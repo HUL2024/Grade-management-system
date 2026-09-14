@@ -148,7 +148,7 @@ export default function AcademicYears() {
       )}
 
       {editingYear && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/60 sm:items-center sm:justify-center">
+        <div className="app-overlay fixed inset-0 z-50 flex items-end bg-black/60 sm:items-center sm:justify-center">
           <form onSubmit={saveYear} className="w-full rounded-t-2xl bg-ink-soft p-4 sm:max-w-md sm:rounded-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-gold">{editingYear.id ? 'Edit Year' : 'Add Academic Year'}</h2>
@@ -169,7 +169,7 @@ export default function AcademicYears() {
       )}
 
       {editingPeriod && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/60 sm:items-center sm:justify-center">
+        <div className="app-overlay fixed inset-0 z-50 flex items-end bg-black/60 sm:items-center sm:justify-center">
           <form onSubmit={savePeriod} className="w-full rounded-t-2xl bg-ink-soft p-4 sm:max-w-md sm:rounded-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-gold">{editingPeriod.id ? 'Edit Period' : 'Add Period'}</h2>
