@@ -14,6 +14,33 @@ html, body, #root {
   background-color: var(--color-ink);
 }
 
+:root {
+  --app-height: 100vh;
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-height: 100dvh;
+  }
+}
+
+.app-shell {
+  height: var(--app-height);
+  min-height: 100svh;
+}
+
+.app-content {
+  padding-bottom: calc(4rem + var(--safe-area-bottom));
+  overscroll-behavior-y: contain;
+}
+
+.app-bottom-nav {
+  height: calc(4rem + var(--safe-area-bottom));
+  min-height: calc(4rem + var(--safe-area-bottom));
+  padding-bottom: var(--safe-area-bottom);
+}
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;

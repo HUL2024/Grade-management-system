@@ -64,7 +64,7 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-ink text-neutral-100">
+    <div className="app-shell flex flex-col bg-ink text-neutral-100">
       {/* Top bar */}
       <header className="no-print flex items-center justify-between border-b border-gold/20 bg-ink-soft px-4 py-3">
         <button onClick={() => setMenuOpen(true)} className="p-1 text-gold">
@@ -130,7 +130,7 @@ export default function Layout() {
       {/* Page content */}
       <main
         ref={mainRef}
-        className="flex-1 overflow-y-auto pb-16"
+        className="app-content flex-1 overflow-y-auto"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
@@ -142,7 +142,7 @@ export default function Layout() {
       </main>
 
       {/* Bottom nav (mobile) */}
-      <nav className="no-print fixed bottom-0 left-0 right-0 z-40 flex border-t border-gold/20 bg-ink-soft">
+      <nav className="app-bottom-nav no-print fixed bottom-0 left-0 right-0 z-40 flex border-t border-gold/20 bg-ink-soft">
         {bottomNav.map((item) => (
           <NavLink
             key={item.to}
