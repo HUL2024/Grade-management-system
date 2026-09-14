@@ -1,9 +1,11 @@
 import { NavLink, Outlet, useNavigate } from 'react-router-dom';
+
 import {
   LayoutDashboard, Users, GraduationCap, BookOpen, ClipboardList,
   CalendarCheck, FileText, Trophy, History, ArrowUpCircle, BarChart3,
   CalendarRange, Settings, DatabaseBackup, ShieldCheck, ScrollText, Menu, LogOut, WifiOff, Wifi, ListChecks, UserCog, UserCircle
 } from 'lucide-react';
+
 import { useState, useRef } from 'react';
 import { useAuth } from '../context/AuthContext';
 import NotificationBell from './NotificationBell';
@@ -39,13 +41,18 @@ export default function Layout() {
   const mainRef = useRef<HTMLElement>(null);
 
   function handleTouchStart(e: React.TouchEvent) {
-    pullStartY.current = mainRef.current && mainRef.current.scrollTop <= 0 ? e.touches[0].clientY : 0;
+    pullStartY.current =
+      mainRef.current && mainRef.current.scrollTop <= 0
+        ? e.touches[0].clientY
+        : 0;
   }
+
   function handleTouchMove(e: React.TouchEvent) {
     if (pullStartY.current && e.touches[0].clientY - pullStartY.current > 70) {
       setPulling(true);
     }
   }
+
   function handleTouchEnd() {
     if (pulling) {
       window.location.reload();
@@ -53,9 +60,11 @@ export default function Layout() {
     pullStartY.current = 0;
     setPulling(false);
   }
-  const navigate = useNavigate();
 
-  const visibleNav = NAV.filter((item) => !item.roles || hasRole(...(item.roles as any)));
+  const navigate = useNavigate();
+  const visibleNav = NAV.filter(
+    (item) => !item.roles || hasRole(...(item.roles as any))
+  );
   const bottomNav = visibleNav.slice(0, 4);
 
   async function handleSignOut() {
@@ -64,20 +73,34 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-full flex-col bg-ink text-neutral-100">
+    <div className="app-shell flex flex-col bg-ink text-neutral-100">
       {/* Top bar */}
       <header className="no-print safe-top safe-left safe-right flex items-center justify-between border-b border-gold/20 bg-ink-soft px-4 py-3">
         <button onClick={() => setMenuOpen(true)} className="p-1 text-gold">
           <Menu size={22} />
         </button>
+
         <div className="text-center">
-          <div className="text-sm font-semibold text-gold">AJB Leaders Academy</div>
-          <div className="text-[10px] text-neutral-400">Grade Management System</div>
+          <div className="text-sm font-semibold text-gold">
+            AJB Leaders Academy
+          </div>
+          <div className="text-[10px] text-neutral-400">
+            Grade Management System
+          </div>
         </div>
+
         <div className="flex items-center gap-2">
           <NotificationBell />
-          <div className="flex items-center gap-1 text-xs" title={isOnline ? 'Online' : 'Offline — changes will sync later'}>
-            {isOnline ? <Wifi size={16} className="text-green-500" /> : <WifiOff size={16} className="text-red-500" />}
+
+          <div
+            className="flex items-center gap-1 text-xs"
+            title={isOnline ? 'Online' : 'Offline — changes will sync later'}
+          >
+            {isOnline ? (
+              <Wifi size={16} className="text-green-500" />
+            ) : (
+              <WifiOff size={16} className="text-red-500" />
+            )}
           </div>
         </div>
       </header>
@@ -90,15 +113,26 @@ export default function Layout() {
 
       {/* Slide-out menu */}
       {menuOpen && (
-        <div className="no-print fixed inset-0 z-50 flex">
+        <div className="app-overlay no-print fixed inset-0 z-50 flex">
           <div className="safe-top safe-bottom w-72 overflow-y-auto bg-ink-soft p-3">
             <div className="mb-3 flex items-center justify-between">
               <div>
-                <div className="font-semibold text-gold">{profile?.full_name}</div>
-                <div className="text-xs capitalize text-neutral-400">{profile?.role.replace('_', ' ')}</div>
+                <div className="font-semibold text-gold">
+                  {profile?.full_name}
+                </div>
+                <div className="text-xs capitalize text-neutral-400">
+                  {profile?.role.replace('_', ' ')}
+                </div>
               </div>
-              <button onClick={() => setMenuOpen(false)} className="text-neutral-400">✕</button>
+
+              <button
+                onClick={() => setMenuOpen(false)}
+                className="text-neutral-400"
+              >
+                ✕
+              </button>
             </div>
+
             <nav className="flex flex-col gap-1">
               {visibleNav.map((item) => (
                 <NavLink
@@ -107,7 +141,9 @@ export default function Layout() {
                   onClick={() => setMenuOpen(false)}
                   className={({ isActive }) =>
                     `flex items-center gap-3 rounded-lg px-3 py-2 text-sm ${
-                      isActive ? 'bg-gold text-black font-medium' : 'text-neutral-200 hover:bg-surface'
+                      isActive
+                        ? 'bg-gold text-black font-medium'
+                        : 'text-neutral-200 hover:bg-surface'
                     }`
                   }
                 >
@@ -115,6 +151,7 @@ export default function Layout() {
                   {item.label}
                 </NavLink>
               ))}
+
               <button
                 onClick={handleSignOut}
                 className="mt-3 flex items-center gap-3 rounded-lg px-3 py-2 text-sm text-red-400 hover:bg-surface"
@@ -123,26 +160,33 @@ export default function Layout() {
               </button>
             </nav>
           </div>
-          <div className="flex-1 bg-black/60" onClick={() => setMenuOpen(false)} />
+
+          <div
+            className="flex-1 bg-black/60"
+            onClick={() => setMenuOpen(false)}
+          />
         </div>
       )}
 
       {/* Page content */}
       <main
         ref={mainRef}
-        className="main-bottom-pad flex-1 overflow-y-auto safe-left safe-right"
+        className="app-content main-bottom-pad flex-1 overflow-y-auto safe-left safe-right"
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
       >
         {pulling && (
-          <div className="no-print py-2 text-center text-xs text-gold">Release to refresh…</div>
+          <div className="no-print py-2 text-center text-xs text-gold">
+            Release to refresh…
+          </div>
         )}
+
         <Outlet />
       </main>
 
       {/* Bottom nav (mobile) */}
-      <nav className="no-print bottom-nav-safe safe-left safe-right fixed bottom-0 left-0 right-0 z-40 flex border-t border-gold/20 bg-ink-soft">
+      <nav className="app-bottom-nav no-print bottom-nav-safe safe-left safe-right fixed bottom-0 left-0 right-0 z-40 flex border-t border-gold/20 bg-ink-soft">
         {bottomNav.map((item) => (
           <NavLink
             key={item.to}
@@ -157,7 +201,11 @@ export default function Layout() {
             {item.label}
           </NavLink>
         ))}
-        <button onClick={() => setMenuOpen(true)} className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] text-neutral-400">
+
+        <button
+          onClick={() => setMenuOpen(true)}
+          className="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px] text-neutral-400"
+        >
           <Menu size={20} />
           More
         </button>

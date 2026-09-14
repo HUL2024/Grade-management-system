@@ -152,7 +152,7 @@ export default function Students() {
       )}
 
       {editing && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/60 sm:items-center sm:justify-center">
+        <div className="app-overlay fixed inset-0 z-50 flex items-end bg-black/60 sm:items-center sm:justify-center">
           <form onSubmit={handleSave} className="max-h-[90vh] w-full overflow-y-auto rounded-t-2xl bg-ink-soft p-4 sm:max-w-md sm:rounded-2xl">
             <div className="mb-3 flex items-center justify-between">
               <h2 className="font-semibold text-gold">{editing.id ? 'Edit Student' : 'Add Student'}</h2>

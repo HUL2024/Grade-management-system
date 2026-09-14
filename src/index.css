@@ -16,6 +16,40 @@ html, body, #root {
   overflow: hidden; /* the app itself scrolls internally (see main content area); this avoids double scrollbars/bounce */
 }
 
+:root {
+  --app-height: 100vh;
+  --safe-area-top: env(safe-area-inset-top, 0px);
+  --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+}
+
+@supports (height: 100dvh) {
+  :root {
+    --app-height: 100dvh;
+  }
+}
+
+.app-shell {
+  height: var(--app-height);
+  min-height: 100svh;
+  padding-top: var(--safe-area-top);
+}
+
+.app-content {
+  padding-bottom: calc(4rem + var(--safe-area-bottom));
+  overscroll-behavior-y: contain;
+}
+
+.app-bottom-nav {
+  height: calc(4rem + var(--safe-area-bottom));
+  min-height: calc(4rem + var(--safe-area-bottom));
+  padding-bottom: var(--safe-area-bottom);
+}
+
+.app-overlay {
+  padding-top: var(--safe-area-top);
+  padding-bottom: var(--safe-area-bottom);
+}
+
 body {
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
