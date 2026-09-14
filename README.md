@@ -107,6 +107,17 @@ npm run dev
   - `ANDROID_KEYSTORE_PASSWORD`
   - `ANDROID_KEY_ALIAS`
   - `ANDROID_KEY_PASSWORD`
+  On Windows PowerShell, create the keystore once with a Java installation,
+  then encode that same file for the GitHub secret:
+
+  ```powershell
+  keytool -genkeypair -v -keystore ajb-release.keystore -alias ajb-release -keyalg RSA -keysize 2048 -validity 10000
+  [Convert]::ToBase64String([IO.File]::ReadAllBytes("ajb-release.keystore")) | Set-Clipboard
+  ```
+
+  Paste the clipboard value into `ANDROID_KEYSTORE_BASE64`. Store the
+  keystore, alias, and passwords securely. Do not generate a replacement
+  keystore for a later release.
 5. When it finishes, open the workflow run and download the
   `AJB-Leaders-Academy-Grade-Management-System` artifact — it contains the
   signed `app-release.apk`.
