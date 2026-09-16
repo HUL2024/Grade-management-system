@@ -89,6 +89,36 @@ cp .env.example .env
 npm run dev
 ```
 
+## 3A. Deploying the web version to Vercel
+
+This app is already set up to work as a normal React web app in the browser, while keeping the Android/Capacitor app intact. No native Android files need to be changed for the web version.
+
+1. Push this project to GitHub.
+2. Open [vercel.com](https://vercel.com) and sign in.
+3. Click **Add New Project**.
+4. Import the GitHub repository for this app.
+5. In the project settings, set the framework to **Vite**.
+6. Keep the root directory as the project root.
+7. Add these environment variables in Vercel:
+   - `VITE_SUPABASE_URL`
+   - `VITE_SUPABASE_ANON_KEY`
+8. Use the same values from your local `.env` file.
+9. Click **Deploy**.
+10. After deployment finishes, Vercel gives you a live URL like:
+   `https://your-project.vercel.app`
+
+Important:
+- The existing Capacitor Android app remains unchanged.
+- The web deployment uses the same source code and the same Supabase credentials.
+- The included `vercel.json` file ensures client-side routes still work when a user refreshes a page.
+
+Example Vercel settings:
+
+```bash
+VITE_SUPABASE_URL=https://your-project-ref.supabase.co
+VITE_SUPABASE_ANON_KEY=your-anon-key-here
+```
+
 ## 4. Building the Android APK
 
 ### Automatically (recommended) — GitHub Actions
